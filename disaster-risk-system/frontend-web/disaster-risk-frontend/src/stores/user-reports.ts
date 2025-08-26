@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { UserReport, ApiResponse, PaginatedResponse } from '../types'
 import { userReportsApi } from '../api/modules/user-reports'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from './auth'
 
 export const useUserReportsStore = defineStore('userReports', () => {
   // 状态
@@ -12,6 +13,8 @@ export const useUserReportsStore = defineStore('userReports', () => {
   const total = ref(0)
   const currentPage = ref(1)
   const pageSize = ref(10)
+
+  const authStore = useAuthStore()
 
   // 计算属性
   const pendingReports = computed(() => 
@@ -212,6 +215,9 @@ export const useUserReportsStore = defineStore('userReports', () => {
   }
 
   // 更新报告状态 - 使用updateUserReport替代
+  /**
+   * 更新报告的验证状态字段（不记录验证人信息）
+   */
   const updateReportStatus = async (id: number, status: 'pending' | 'verified' | 'rejected') => {
     try {
       const response: ApiResponse<UserReport> = await userReportsApi.updateUserReport(id, { verification_status: status })
@@ -232,9 +238,23 @@ export const useUserReportsStore = defineStore('userReports', () => {
   }
 
   // 验证报告
+  /**
+   * 验证报告：将 verification_status 设置为 verified，并记录 verified_by 与备注
+   * @param id 报告ID
+   * @param verificationNotes 验证备注（可选）
+   */
   const verifyReport = async (id: number, verificationNotes?: string) => {
     try {
-      const response: ApiResponse<UserReport> = await userReportsApi.verifyReport(id, verificationNotes)
+      const verifiedBy = authStore.user?.id
+      if (!verifiedBy) {
+        ElMessage.error('未获取到当前用户信息，无法执行验证')
+        return null
+      }
+      const response: ApiResponse<UserReport> = await userReportsApi.verifyReport(id, {
+        verification_status: 'verified',
+        verified_by: verifiedBy,
+        verification_notes: verificationNotes
+      })
       
       if (response.success) {
         ElMessage.success('报告验证成功')
@@ -251,10 +271,24 @@ export const useUserReportsStore = defineStore('userReports', () => {
     }
   }
 
-  // 拒绝报告 - 使用updateUserReport替代
+  // 拒绝报告
+  /**
+   * 拒绝报告：将 verification_status 设置为 rejected，并记录 verified_by 与拒绝原因
+   * @param id 报告ID
+   * @param rejectionReason 拒绝原因（必填）
+   */
   const rejectReport = async (id: number, rejectionReason: string) => {
     try {
-      const response: ApiResponse<UserReport> = await userReportsApi.updateUserReport(id, { verification_status: 'rejected', verification_notes: rejectionReason })
+      const verifiedBy = authStore.user?.id
+      if (!verifiedBy) {
+        ElMessage.error('未获取到当前用户信息，无法执行拒绝')
+        return null
+      }
+      const response: ApiResponse<UserReport> = await userReportsApi.verifyReport(id, {
+        verification_status: 'rejected',
+        verified_by: verifiedBy,
+        verification_notes: rejectionReason
+      })
       
       if (response.success) {
         ElMessage.success('报告已拒绝')
@@ -267,6 +301,41 @@ export const useUserReportsStore = defineStore('userReports', () => {
     } catch (error) {
       console.error('Reject report error:', error)
       ElMessage.error('拒绝报告失败')
+      return null
+    }
+  }
+
+  // 新增：重置为待验证
+  /**
+   * 将报告状态重置为 pending，并记录操作人与备注
+   * @param id 报告ID
+   * @param notes 备注（可选）
+   */
+  const resetReportToPending = async (id: number, notes?: string) => {
+    try {
+      const verifiedBy = authStore.user?.id
+      if (!verifiedBy) {
+        ElMessage.error('未获取到当前用户信息，无法执行重置')
+        return null
+      }
+      const response: ApiResponse<UserReport> = await userReportsApi.verifyReport(id, {
+        verification_status: 'pending',
+        verified_by: verifiedBy,
+        verification_notes: notes
+      })
+
+      if (response.success) {
+        ElMessage.success('状态已重置为待验证')
+        // 列表刷新
+        await getUserReports()
+        return response.data
+      } else {
+        ElMessage.error(response.message || '重置为待验证失败')
+        return null
+      }
+    } catch (error) {
+      console.error('Reset to pending error:', error)
+      ElMessage.error('重置为待验证失败')
       return null
     }
   }
@@ -340,6 +409,7 @@ export const useUserReportsStore = defineStore('userReports', () => {
     updateReportStatus,
     verifyReport,
     rejectReport,
+    resetReportToPending,
     getReportStats,
     uploadAttachment,
     resetState

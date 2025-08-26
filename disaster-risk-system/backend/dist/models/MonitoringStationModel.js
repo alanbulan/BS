@@ -57,15 +57,6 @@ class MonitoringStationModel extends BaseModel_1.BaseModel {
       `;
             params.push(limit, offset);
             const dataResult = await this.executeQuery(dataQuery, params);
-            console.log('=== 数据库查询结果调试 ===');
-            console.log('SQL查询:', dataQuery);
-            console.log('查询参数:', params);
-            console.log('结果行数:', dataResult.rows.length);
-            if (dataResult.rows.length > 0) {
-                console.log('第一行数据:', JSON.stringify(dataResult.rows[0], null, 2));
-                console.log('字段名列表:', Object.keys(dataResult.rows[0]));
-            }
-            console.log('=== 调试结束 ===');
             const totalPages = Math.ceil(total / limit);
             return {
                 data: dataResult.rows,
@@ -116,7 +107,7 @@ class MonitoringStationModel extends BaseModel_1.BaseModel {
                 paramIndex += 2;
             }
             const allowedFields = [
-                'station_id', 'name', 'station_type',
+                'station_id', 'name', 'station_type', 'monitoring_type',
                 'address', 'zone_id', 'elevation', 'installation_date', 'installation_status',
                 'maintenance_schedule', 'contact_info', 'technical_specs',
                 'data_transmission_interval', 'power_source', 'communication_method',
@@ -153,7 +144,7 @@ class MonitoringStationModel extends BaseModel_1.BaseModel {
                 paramIndex += 2;
             }
             const allowedFields = [
-                'station_id', 'name', 'station_type',
+                'station_id', 'name', 'station_type', 'monitoring_type',
                 'address', 'zone_id', 'elevation', 'installation_date', 'installation_status',
                 'maintenance_schedule', 'contact_info', 'technical_specs',
                 'data_transmission_interval', 'power_source', 'communication_method',

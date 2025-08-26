@@ -6,6 +6,23 @@ class EscapeRouteModel extends BaseModel_1.BaseModel {
     constructor() {
         super('escape_routes');
     }
+    async findById(id) {
+        const query = `
+      SELECT *,
+        ST_AsGeoJSON(start_point) as start_point_json,
+        ST_AsGeoJSON(end_point) as end_point_json,
+        ST_AsGeoJSON(route_geometry) as route_geometry_json
+      FROM escape_routes
+      WHERE id = $1
+    `;
+        const result = await this.executeQuery(query, [id]);
+        if (result.rows.length === 0) {
+            return null;
+        }
+        const row = result.rows[0];
+        this.parseGeometryFields(row);
+        return row;
+    }
     async create(data) {
         const query = `
       INSERT INTO escape_routes (

@@ -166,12 +166,37 @@ export declare const REPORT_STATUS: {
     readonly RESOLVED: "resolved";
     readonly REJECTED: "rejected";
 };
+export declare const VERIFICATION_STATUSES: {
+    readonly PENDING: "pending";
+    readonly VERIFIED: "verified";
+    readonly REJECTED: "rejected";
+};
+export declare const VERIFICATION_STATUS_LABELS: {
+    readonly pending: "待验证";
+    readonly verified: "已验证";
+    readonly rejected: "已拒绝";
+};
+export declare const SEVERITY_LEVELS: readonly [1, 2, 3, 4, 5];
+export declare const SEVERITY_LEVEL_LABELS: {
+    readonly 1: "轻微";
+    readonly 2: "一般";
+    readonly 3: "严重";
+    readonly 4: "很严重";
+    readonly 5: "极严重";
+};
 export declare const REPORT_TYPES: {
     readonly DISASTER: "disaster";
     readonly INFRASTRUCTURE: "infrastructure";
     readonly SAFETY: "safety";
     readonly ENVIRONMENTAL: "environmental";
     readonly OTHER: "other";
+};
+export declare const REPORT_TYPE_LABELS: {
+    readonly disaster: "灾害报告";
+    readonly infrastructure: "基础设施";
+    readonly safety: "安全";
+    readonly environmental: "环境";
+    readonly other: "其他";
 };
 export declare const REPORT_PRIORITIES: {
     readonly LOW: "low";

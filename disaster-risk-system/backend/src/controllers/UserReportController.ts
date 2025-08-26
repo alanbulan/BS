@@ -1,14 +1,22 @@
-import { Request, Response } from 'express';
-import { BaseController } from './BaseController';
-import { UserReportModel } from '../models/UserReportModel';
-import { Point, UserReport, LocationQuery } from '../types';
+import { Request, Response } from 'express'
+import { BaseController } from './BaseController'
+import { UserReportModel } from '../models/UserReportModel'
+import { Point, UserReport, LocationQuery } from '../types'
+import { 
+  REPORT_TYPES,
+  REPORT_TYPE_LABELS,
+  VERIFICATION_STATUSES,
+  VERIFICATION_STATUS_LABELS,
+  SEVERITY_LEVELS,
+  SEVERITY_LEVEL_LABELS
+} from '../utils'
 
 export class UserReportController extends BaseController {
-  private userReportModel: UserReportModel;
+  private userReportModel: UserReportModel
 
   constructor() {
-    super();
-    this.userReportModel = new UserReportModel();
+    super()
+    this.userReportModel = new UserReportModel()
   }
 
   /**
@@ -287,6 +295,33 @@ export class UserReportController extends BaseController {
       this.error(res, '获取报告类型列表失败: ' + (error as Error).message, 500);
     }
   };
+
+  /**
+   * 获取与用户报告相关的枚举常量
+   * 返回内容包含：
+   * - reportTypes: 报告类型枚举对象
+   * - reportTypeLabels: 报告类型中文标签映射
+   * - verificationStatuses: 验证状态枚举对象（与 user_reports.verification_status 字段对应）
+   * - verificationStatusLabels: 验证状态中文标签映射
+   * - severityLevels: 严重程度可选值数组（1-5）
+   * - severityLevelLabels: 严重程度中文标签映射
+   */
+  getReportConstants = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const data = {
+        reportTypes: REPORT_TYPES,
+        reportTypeLabels: REPORT_TYPE_LABELS,
+        verificationStatuses: VERIFICATION_STATUSES,
+        verificationStatusLabels: VERIFICATION_STATUS_LABELS,
+        severityLevels: SEVERITY_LEVELS,
+        severityLevelLabels: SEVERITY_LEVEL_LABELS
+      }
+      this.success(res, data, '获取报告常量成功')
+    } catch (error) {
+      console.error('获取报告常量失败:', error)
+      this.error(res, '获取报告常量失败: ' + (error as Error).message, 500)
+    }
+  }
 
   /**
    * 删除用户报告

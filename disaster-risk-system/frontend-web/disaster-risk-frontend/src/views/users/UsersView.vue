@@ -1,8 +1,10 @@
 <template>
   <div class="users-view">
     <div class="page-header">
-      <h1>用户管理</h1>
-      <p>管理系统用户账户和权限</p>
+      <div class="header-left">
+        <h2>用户管理</h2>
+        <p>管理系统用户账户和权限</p>
+      </div>
     </div>
 
     <div class="content-area">
@@ -24,14 +26,14 @@
               <el-input v-model="filters.email" placeholder="请输入邮箱" clearable />
             </el-form-item>
             <el-form-item label="角色">
-              <el-select v-model="filters.role" placeholder="选择角色" clearable>
+              <el-select v-model="filters.role" placeholder="请选择角色" clearable>
                 <el-option label="管理员" value="admin" />
                 <el-option label="操作员" value="operator" />
                 <el-option label="普通用户" value="user" />
               </el-select>
             </el-form-item>
             <el-form-item label="状态">
-              <el-select v-model="filters.is_active" placeholder="选择状态" clearable>
+              <el-select v-model="filters.is_active" placeholder="请选择状态" clearable>
                 <el-option label="启用" :value="true" />
                 <el-option label="禁用" :value="false" />
               </el-select>
@@ -82,22 +84,24 @@
           </el-table-column>
           <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" @click="viewUserDetail(row.id)">详情</el-button>
-              <el-button 
-                size="small" 
-                :type="row.is_active ? 'warning' : 'success'"
-                @click="toggleUserStatus(row)"
-              >
-                {{ row.is_active ? '禁用' : '启用' }}
-              </el-button>
-              <el-button 
-                size="small" 
-                type="danger" 
-                @click="deleteUser(row.id)"
-                :disabled="row.role === 'admin'"
-              >
-                删除
-              </el-button>
+              <div class="action-buttons">
+                <el-button size="small" @click="viewUserDetail(row.id)">详情</el-button>
+                <el-button 
+                  size="small" 
+                  :type="row.is_active ? 'warning' : 'success'"
+                  @click="toggleUserStatus(row)"
+                >
+                  {{ row.is_active ? '禁用' : '启用' }}
+                </el-button>
+                <el-button 
+                  size="small" 
+                  type="danger" 
+                  @click="deleteUser(row.id)"
+                  :disabled="row.role === 'admin'"
+                >
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -152,7 +156,7 @@
           </div>
         </el-form-item>
         <el-form-item label="权限" prop="permissions">
-          <el-select v-model="userForm.permissions" multiple placeholder="选择权限" style="width: 100%">
+          <el-select v-model="userForm.permissions" multiple placeholder="请选择权限" style="width: 100%">
             <el-option label="用户管理" value="user_management" />
             <el-option label="监测站管理" value="station_management" />
             <el-option label="风险评估" value="risk_assessment" />
@@ -205,7 +209,7 @@ const userFormRef = ref<FormInstance>()
 const filters = reactive({
   username: '',
   email: '',
-  role: '',
+  role: undefined as 'admin' | 'operator' | 'user' | undefined,
   is_active: undefined as boolean | undefined
 })
 
@@ -297,7 +301,7 @@ const resetFilters = () => {
   Object.assign(filters, {
     username: '',
     email: '',
-    role: '',
+    role: undefined,
     is_active: undefined
   })
   loadUsers()
@@ -496,18 +500,25 @@ onMounted(() => {
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.page-header h1 {
+.header-left h2 {
   margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
+  color: #303133;
 }
 
-.page-header p {
+.header-left p {
   margin: 0;
-  color: #666;
+  color: #909399;
+  font-size: 14px;
 }
 
 .card-header {

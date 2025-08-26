@@ -472,6 +472,9 @@ class MonitoringController extends BaseController_1.BaseController {
         this.createStation = async (req, res) => {
             try {
                 const stationData = req.body;
+                if (stationData && stationData.altitude !== undefined && stationData.elevation === undefined) {
+                    stationData.elevation = stationData.altitude;
+                }
                 const requiredFields = ['station_id', 'name', 'station_type'];
                 const validation = this.validateRequired(stationData, requiredFields);
                 if (validation) {
@@ -497,7 +500,10 @@ class MonitoringController extends BaseController_1.BaseController {
                     installation_date: stationData.installation_date,
                     maintenance_schedule: stationData.maintenance_schedule,
                     data_transmission_interval: stationData.data_transmission_interval || 300,
-                    is_active: stationData.is_active !== undefined ? stationData.is_active : true
+                    is_active: stationData.is_active !== undefined ? stationData.is_active : true,
+                    elevation: stationData.elevation,
+                    installation_status: stationData.installation_status,
+                    notes: stationData.notes
                 };
                 const station = await this.stationModel.create(insertData);
                 this.created(res, station, '监测站创建成功');
@@ -511,6 +517,9 @@ class MonitoringController extends BaseController_1.BaseController {
             try {
                 const { id } = req.params;
                 const stationData = req.body;
+                if (stationData && stationData.altitude !== undefined && stationData.elevation === undefined) {
+                    stationData.elevation = stationData.altitude;
+                }
                 if (!id) {
                     this.error(res, '监测站ID不能为空', 400);
                     return;
@@ -538,7 +547,8 @@ class MonitoringController extends BaseController_1.BaseController {
                 const allowedFields = [
                     'station_id', 'name', 'station_type', 'location',
                     'zone_id', 'equipment_info', 'installation_date',
-                    'maintenance_schedule', 'data_transmission_interval', 'is_active'
+                    'maintenance_schedule', 'data_transmission_interval', 'is_active',
+                    'elevation', 'installation_status', 'notes'
                 ];
                 for (const field of allowedFields) {
                     if (stationData[field] !== undefined) {

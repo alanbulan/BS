@@ -281,7 +281,8 @@ onMounted(() => {
 
 .layout-sidebar {
   width: 200px;
-  background: #001529;
+  background: #fff;
+  border-right: 1px solid var(--el-border-color-lighter);
   transition: width 0.3s;
   overflow: hidden;
 }
@@ -305,40 +306,40 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-/* Element Plus Menu 样式覆盖 */
+/* Element Plus Menu 样式覆盖（使用系统主色变量） */
 :deep(.el-menu) {
-  background-color: #001529 !important;
+  background-color: var(--el-bg-color) !important;
 }
 
 :deep(.el-menu-item) {
-  color: rgba(255, 255, 255, 0.65) !important;
+  color: var(--el-text-color-primary) !important;
 }
 
 :deep(.el-menu-item:hover) {
-  background-color: #1890ff !important;
-  color: #fff !important;
+  background-color: var(--el-color-primary-light-9) !important;
+  color: var(--el-color-primary) !important;
 }
 
 :deep(.el-menu-item.is-active) {
-  background-color: #1890ff !important;
-  color: #fff !important;
+  background-color: var(--el-color-primary-light-9) !important;
+  color: var(--el-color-primary) !important;
 }
 
 :deep(.el-sub-menu__title) {
-  color: rgba(255, 255, 255, 0.65) !important;
+  color: var(--el-text-color-primary) !important;
 }
 
 :deep(.el-sub-menu__title:hover) {
-  background-color: #1890ff !important;
-  color: #fff !important;
+  background-color: var(--el-color-primary-light-9) !important;
+  color: var(--el-color-primary) !important;
 }
 
 :deep(.el-sub-menu .el-menu-item) {
-  background-color: #000c17 !important;
+  background-color: var(--el-bg-color) !important;
 }
 
 :deep(.el-sub-menu .el-menu-item:hover) {
-  background-color: #1890ff !important;
+  background-color: var(--el-color-primary-light-9) !important;
 }
 
 /* 响应式设计 */

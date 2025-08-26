@@ -18,6 +18,9 @@ class MonitoringStationController extends BaseController_1.BaseController {
             if (validation)
                 return this.error(res, validation);
             const { station_id, station_name, station_type, status, location, province, city, county, address, altitude, installation_date, manager_name, manager_phone, responsible_unit, equipment_info, maintenance_cycle, last_maintenance_date, next_maintenance_date, remark } = req.body;
+            if (altitude !== undefined && req.body.elevation === undefined) {
+                req.body.elevation = altitude;
+            }
             const existingStation = await this.stationModel.findByStationId(station_id);
             if (existingStation) {
                 return this.error(res, '监测站编号已存在');
@@ -61,15 +64,6 @@ class MonitoringStationController extends BaseController_1.BaseController {
                 console.error('参数:', { page, limit, conditions });
                 const result = await this.stationModel.paginate(page, limit, conditions);
                 console.error('=== paginate方法调用完成 ===');
-                console.error('\n=== CONTROLLER 强制调试 ===');
-                console.error('查询结果数量:', result.data.length);
-                if (result.data.length > 0) {
-                    console.error('第一条数据:', JSON.stringify(result.data[0], null, 2));
-                    console.error('字段列表:', Object.keys(result.data[0]));
-                    console.error('location_wkt存在:', !!result.data[0].location_wkt);
-                    console.error('location_wkt值:', result.data[0].location_wkt);
-                }
-                console.error('=== CONTROLLER 调试结束 ===\n');
                 const pagination = {
                     page: result.pagination.page,
                     limit: result.pagination.limit,
@@ -118,6 +112,9 @@ class MonitoringStationController extends BaseController_1.BaseController {
                 return this.error(res, '无效的监测站ID');
             }
             const { station_id, station_name, station_type, status, location, province, city, county, address, altitude, installation_date, manager_name, manager_phone, responsible_unit, equipment_info, maintenance_cycle, last_maintenance_date, next_maintenance_date, remark } = req.body;
+            if (altitude !== undefined && req.body.elevation === undefined) {
+                req.body.elevation = altitude;
+            }
             try {
                 const existingStation = await this.stationModel.findById(id);
                 if (!existingStation) {

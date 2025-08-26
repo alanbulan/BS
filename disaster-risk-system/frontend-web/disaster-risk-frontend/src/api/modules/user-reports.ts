@@ -28,8 +28,16 @@ export const userReportsApi = {
   },
 
   // 验证报告
-  verifyReport: (id: number, verificationNotes?: string): Promise<ApiResponse<UserReport>> => {
-    return request.patch(`/reports/${id}/verify`, { verification_notes: verificationNotes })
+  /**
+   * 调用后端验证接口，更新报告的验证状态
+   * @param id 报告ID
+   * @param data 验证数据，包含 verification_status、verified_by、verification_notes
+   */
+  verifyReport: (
+    id: number,
+    data: { verification_status: 'pending' | 'verified' | 'rejected'; verified_by: number; verification_notes?: string }
+  ): Promise<ApiResponse<UserReport>> => {
+    return request.patch(`/reports/${id}/verify`, data)
   },
 
   // 获取报告统计

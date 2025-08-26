@@ -17,7 +17,7 @@ import type { EscapeRoute } from '@/types'
 /**
  * 逃生路线地图组件
  * 负责在Leaflet地图上渲染路线、起终点、路径点（如有）与备选路线（如有）
- * 此外，叠加天气依赖(weather_dependency)与无障碍信息(accessibility_info)图层，
+ * 此外，叠加天气依赖(weather_dependency)、无障碍信息(accessibility_info)、路线条件(route_conditions)图层，
  * 并提供图层控制与图例说明。
  */
 interface Props {
@@ -47,16 +47,21 @@ L.Icon.Default.mergeOptions({
 const mapContainer = ref<HTMLElement>()
 const error = ref('')
 let map: L.Map | null = null
-let routeLayer: L.GeoJSON | null = null
+// 统一为 L.Layer 以兼容 GeoJSON/LayerGroup/Marker
+let routeLayer: L.Layer | null = null
 let startMarker: L.Marker | null = null
 let endMarker: L.Marker | null = null
-let waypointsLayer: L.GeoJSON | null = null
-let alternativesLayer: L.GeoJSON | null = null
-let weatherLayer: L.GeoJSON | null = null
-let accessibilityLayer: L.GeoJSON | null = null
+let waypointsLayer: L.Layer | null = null
+let alternativesLayer: L.Layer | null = null
+let weatherLayer: L.Layer | null = null
+let accessibilityLayer: L.Layer | null = null
+// 新增：路线条件图层
+let conditionsLayer: L.Layer | null = null
 let layersControl: L.Control.Layers | null = null
 let legendControl: any = null
 let resizeObserver: ResizeObserver | null = null
+// 存储主路线坐标（[lng,lat]）以支持中点标注与分布标注
+let routeCoords: [number, number][] = []
 
 /**
  * 初始化地图
@@ -68,6 +73,9 @@ const initializeMap = () => {
     return
   }
   try {
+    // 初始化前清空可能残留的错误信息
+    error.value = ''
+
     map = L.map(mapContainer.value, {
       center: props.center,
       zoom: props.zoom,
@@ -125,18 +133,51 @@ function toFeatureCollection(input: any): GeoJSON.FeatureCollection | null {
     return { type: 'FeatureCollection', features: [data] } as GeoJSON.FeatureCollection
   }
   // 纯 Geometry
-  if (data.type && typeof data.type === 'string' && data.coordinates) {
+  if (data.type && typeof data.type === 'string' && (data as any).coordinates) {
     return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: data }] }
   }
   // Feature 数组
-  if (Array.isArray(data) && data.length && data[0]?.type) {
+  if (Array.isArray(data) && data.length && (data[0] as any)?.type) {
     return { type: 'FeatureCollection', features: data }
   }
   return null
 }
 
 /**
- * 渲染整条路线（线、点、路径点、备选路线）和扩展图层（天气、无障碍）
+ * 计算主路线几何的中点坐标（优先使用 route_geometry 的坐标）
+ * 返回 L.LatLng 或 null
+ */
+function getRouteMidLatLng(): L.LatLng | null {
+  if (routeCoords && routeCoords.length) {
+    const mid = routeCoords[Math.floor(routeCoords.length / 2)]
+    return L.latLng(mid[1], mid[0])
+  }
+  // 退化到起终点均值
+  if (startMarker && endMarker) {
+    const a = (startMarker.getLatLng())
+    const b = (endMarker.getLatLng())
+    return L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2)
+  }
+  return null
+}
+
+/**
+ * 创建用于展示键值对信息的 DivIcon 标注
+ * @param latlng 定位
+ * @param title 标题
+ * @param entries 数组: {label,value,color}
+ */
+function createInfoMarker(latlng: L.LatLng, title: string, entries: Array<{ label: string, value: string, color?: string }>): L.Marker {
+  const items = entries.map(e => `<div class="info-item"><span class="dot" style="background:${e.color || '#409EFF'}"></span><span class="k">${e.label}</span><span class="v">${e.value}</span></div>`).join('')
+  const html = `<div class="info-card">
+      <div class="info-title">${title}</div>
+      ${items}
+    </div>`
+  return L.marker(latlng, { icon: L.divIcon({ className: 'info-card-wrapper', html }) })
+}
+
+/**
+ * 渲染整条路线（线、点、路径点、备选路线）和扩展图层（天气、无障碍、路线条件）
  */
 const renderAll = () => {
   if (!map) return
@@ -148,8 +189,10 @@ const renderAll = () => {
 
   // 解析主路线
   const routeGeo = parseMaybeJson(route.route_geometry)
+  routeCoords = []
   if (routeGeo && routeGeo.type === 'LineString') {
-    routeLayer = L.geoJSON(routeGeo, {
+    routeCoords = (routeGeo.coordinates || []) as [number, number][]
+    routeLayer = L.geoJSON(routeGeo as any, {
       style: { color: '#1890ff', weight: 5, opacity: 0.9 }
     }).addTo(map)
   }
@@ -170,7 +213,7 @@ const renderAll = () => {
   // 路径点
   const wps = parseMaybeJson(route.waypoints)
   if (wps && (wps.type === 'FeatureCollection' || wps.type === 'MultiPoint' || wps.type === 'GeometryCollection')) {
-    waypointsLayer = L.geoJSON(wps, {
+    waypointsLayer = L.geoJSON(wps as any, {
       pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { radius: 5, color: '#52c41a' })
     }).addTo(map)
   }
@@ -178,7 +221,7 @@ const renderAll = () => {
   // 备选路线
   const alts = parseMaybeJson(route.alternative_routes)
   if (alts) {
-    alternativesLayer = L.geoJSON(alts, {
+    alternativesLayer = L.geoJSON(alts as any, {
       style: { color: '#faad14', weight: 3, dashArray: '6,6' }
     }).addTo(map)
   }
@@ -187,6 +230,8 @@ const renderAll = () => {
   renderWeatherLayer(route.weather_dependency)
   // 无障碍信息图层
   renderAccessibilityLayer(route.accessibility_info)
+  // 新增：路线条件图层
+  renderConditionsLayer(route.route_conditions)
 
   // 自动适配视野
   fitBounds()
@@ -224,20 +269,33 @@ function getWeatherStyle(feature?: any): L.PathOptions {
  * 渲染天气依赖图层
  * - 支持 FeatureCollection/Feature/Geometry/数组
  * - 为要素绑定属性弹窗
+ * - 回退：若仅为普通对象（非GeoJSON），在主路线中点落一个信息标注
  */
 function renderWeatherLayer(input: any) {
   if (!map) return
   const fc = toFeatureCollection(input)
-  if (!fc) return
-
-  weatherLayer = L.geoJSON(fc as any, {
-    style: getWeatherStyle,
-    pointToLayer: (feature, latlng) => {
-      const style = getWeatherStyle(feature)
-      return L.circleMarker(latlng, { radius: 6, color: style.color as string, fillColor: style.fillColor as string, fillOpacity: 0.7, weight: 2 })
-    },
-    onEachFeature: (feature, layer) => bindPropertiesPopup(feature, layer, '天气依赖')
-  }).addTo(map)
+  if (fc) {
+    weatherLayer = L.geoJSON(fc as any, {
+      style: getWeatherStyle,
+      pointToLayer: (feature, latlng) => {
+        const style = getWeatherStyle(feature)
+        return L.circleMarker(latlng, { radius: 6, color: style.color as string, fillColor: style.fillColor as string, fillOpacity: 0.7, weight: 2 })
+      },
+      onEachFeature: (feature, layer) => bindPropertiesPopup(feature, layer, '天气依赖')
+    }).addTo(map)
+    return
+  }
+  const obj = parseMaybeJson(input)
+  if (obj && typeof obj === 'object') {
+    const mid = getRouteMidLatLng()
+    if (mid) {
+      const mapping: Record<string, string> = { rain: '降雨', snow: '降雪', wind: '大风', fog: '雾', heat: '高温' }
+      const colorMap: Record<string, string> = { rain: '#409EFF', snow: '#A0CFFF', wind: '#E6A23C', fog: '#909399', heat: '#F39C12' }
+      const entries = Object.keys(obj).map(k => ({ label: mapping[k] || k, value: String(obj[k]), color: colorMap[k] }))
+      const marker = createInfoMarker(mid, '天气依赖', entries)
+      weatherLayer = L.layerGroup([marker]).addTo(map)
+    }
+  }
 }
 
 /**
@@ -262,20 +320,90 @@ function getAccessibilityStyle(feature?: any): L.PathOptions {
 
 /**
  * 渲染无障碍信息图层
+ * - 回退：若仅为普通对象（非GeoJSON），在主路线中点落信息标注
  */
 function renderAccessibilityLayer(input: any) {
   if (!map) return
   const fc = toFeatureCollection(input)
-  if (!fc) return
+  if (fc) {
+    accessibilityLayer = L.geoJSON(fc as any, {
+      style: getAccessibilityStyle,
+      pointToLayer: (feature, latlng) => {
+        const style = getAccessibilityStyle(feature)
+        return L.circleMarker(latlng, { radius: 7, color: style.color as string, fillColor: style.fillColor as string, fillOpacity: 0.8, weight: 2 })
+      },
+      onEachFeature: (feature, layer) => bindPropertiesPopup(feature, layer, '无障碍信息')
+    }).addTo(map)
+    return
+  }
+  const obj = parseMaybeJson(input)
+  if (obj && typeof obj === 'object') {
+    const mid = getRouteMidLatLng()
+    if (mid) {
+      // 典型键：wheelchair/elderly/children => 是/否
+      const mapping: Record<string, string> = { wheelchair: '轮椅', elderly: '老人', children: '儿童' }
+      const entries = Object.keys(obj).map(k => ({ label: mapping[k] || k, value: String(obj[k]) === 'true' ? '可达' : String(obj[k]) }))
+      const marker = createInfoMarker(mid, '无障碍信息', entries)
+      accessibilityLayer = L.layerGroup([marker]).addTo(map)
+    }
+  }
+}
 
-  accessibilityLayer = L.geoJSON(fc as any, {
-    style: getAccessibilityStyle,
-    pointToLayer: (feature, latlng) => {
-      const style = getAccessibilityStyle(feature)
-      return L.circleMarker(latlng, { radius: 7, color: style.color as string, fillColor: style.fillColor as string, fillOpacity: 0.8, weight: 2 })
-    },
-    onEachFeature: (feature, layer) => bindPropertiesPopup(feature, layer, '无障碍信息')
-  }).addTo(map)
+/**
+ * 路线条件图层样式
+ * - condition/type: blocked/damaged/flooded/landslide/ice 等
+ * - severity/level：影响圆点大小、透明度
+ */
+function getConditionStyle(feature?: any): L.PathOptions {
+  const p = feature?.properties || {}
+  const t = (p.condition || p.type || p.category || '').toString().toLowerCase()
+  const severity = Number(p.severity ?? p.level ?? 0)
+  const colorMap: Record<string, string> = {
+    blocked: '#F56C6C',
+    damaged: '#E6A23C',
+    flooded: '#409EFF',
+    landslide: '#C0392B',
+    ice: '#A0CFFF',
+    construction: '#F39C12',
+  }
+  const color = colorMap[t] || '#9B59B6'
+  const weight = 2 + (isFinite(severity) ? Math.min(4, severity) : 0)
+  const opacity = Math.min(1, 0.5 + (isFinite(severity) ? severity * 0.08 : 0))
+  return { color, weight, opacity, fillColor: color, fillOpacity: 0.25 + (opacity * 0.2) }
+}
+
+/**
+ * 渲染路线条件图层
+ * - 尽量兼容点/线/面要素；点以圆标注展示，线/面按样式着色
+ * - 回退：若仅为普通对象（非GeoJSON），在主路线中点落信息标注（例如 surface/lighting/shelter/water）
+ */
+function renderConditionsLayer(input: any) {
+  if (!map) return
+  const fc = toFeatureCollection(input)
+  if (fc) {
+    conditionsLayer = L.geoJSON(fc as any, {
+      style: getConditionStyle,
+      pointToLayer: (feature, latlng) => {
+        const style = getConditionStyle(feature)
+        const sev = Number(feature?.properties?.severity ?? feature?.properties?.level ?? 0)
+        const radius = 6 + (isFinite(sev) ? Math.min(10, sev * 2) : 0)
+        return L.circleMarker(latlng, { radius, color: style.color as string, fillColor: style.fillColor as string, fillOpacity: 0.85, weight: 2 })
+      },
+      onEachFeature: (feature, layer) => bindPropertiesPopup(feature, layer, '路线条件')
+    }).addTo(map)
+    return
+  }
+  const obj = parseMaybeJson(input)
+  if (obj && typeof obj === 'object') {
+    const mid = getRouteMidLatLng()
+    if (mid) {
+      const mapping: Record<string, string> = { surface: '路面', lighting: '照明', shelter: '避难设施', water: '饮水' }
+      const colorMap: Record<string, string> = { surface: '#409EFF', lighting: '#F39C12', shelter: '#67C23A', water: '#00B8D9' }
+      const entries = Object.keys(obj).map(k => ({ label: mapping[k] || k, value: String(obj[k]), color: colorMap[k] }))
+      const marker = createInfoMarker(mid, '路线条件', entries)
+      conditionsLayer = L.layerGroup([marker]).addTo(map)
+    }
+  }
 }
 
 /**
@@ -308,13 +436,15 @@ function refreshLayersControl() {
   if (alternativesLayer) overlays['备选路线'] = alternativesLayer
   if (weatherLayer) overlays['天气依赖'] = weatherLayer
   if (accessibilityLayer) overlays['无障碍信息'] = accessibilityLayer
+  // 新增：路线条件
+  if (conditionsLayer) overlays['路线条件'] = conditionsLayer
 
   layersControl = L.control.layers({}, overlays, { collapsed: true, position: 'topright' })
   layersControl.addTo(map)
 }
 
 /**
- * 刷新图例控件（根据当前两类图层存在性显示）
+ * 刷新图例控件（根据当前图层存在性显示）
  */
 function refreshLegend() {
   if (!map) return
@@ -340,10 +470,18 @@ function refreshLegend() {
       <div class="legend-item"><span class="color" style="background:#E6A23C"></span>障碍/围挡</div>
     </div>`
   }
+  if (conditionsLayer) {
+    html += `<div class="legend-section"><div class="legend-title">路线条件</div>
+      <div class="legend-item"><span class="color" style="background:#F56C6C"></span>阻断</div>
+      <div class="legend-item"><span class="color" style="background:#E6A23C"></span>损坏/施工</div>
+      <div class="legend-item"><span class="color" style="background:#409EFF"></span>积水/洪涝</div>
+      <div class="legend-item"><span class="color" style="background:#9B59B6"></span>其他</div>
+    </div>`
+  }
   if (!html) return
   div.innerHTML = html
 
-  // 使用 L.Control.extend 创建自定义控件，避免直接调用 L.control() 的类型问题
+  // 使用 L.Control.extend 创建自定义控件
   const LegendClass = (L.Control as any).extend({
     onAdd: function () {
       return div
@@ -370,7 +508,7 @@ function escapeHtml(str: string) {
  */
 const fitBounds = () => {
   if (!map) return
-  const layers: L.Layer[] = []
+  const layers: any[] = []
   if (routeLayer) layers.push(routeLayer)
   if (waypointsLayer) layers.push(waypointsLayer)
   if (alternativesLayer) layers.push(alternativesLayer)
@@ -378,11 +516,42 @@ const fitBounds = () => {
   if (endMarker) layers.push(endMarker)
   if (weatherLayer) layers.push(weatherLayer)
   if (accessibilityLayer) layers.push(accessibilityLayer)
+  if (conditionsLayer) layers.push(conditionsLayer)
 
   if (!layers.length) return
-  const group = L.featureGroup(layers)
-  const bounds = group.getBounds()
-  if (bounds.isValid()) {
+
+  // 安全地聚合边界，避免某些图层暴露了非函数的 getLatLng 属性导致异常
+  const bounds = L.latLngBounds([])
+  const extendFromLayer = (layer: any) => {
+    try {
+      if (!layer) return
+      if (typeof layer.getBounds === 'function') {
+        const b = layer.getBounds()
+        if (b && b.isValid && b.isValid()) bounds.extend(b)
+        return
+      }
+      if (typeof layer.getLatLngs === 'function') {
+        const latlngs: any = layer.getLatLngs()
+        const flat: any[] = Array.isArray(latlngs) ? latlngs.flat(Infinity) : []
+        if (flat.length) bounds.extend(L.latLngBounds(flat as any))
+        return
+      }
+      if (typeof layer.getLatLng === 'function') {
+        const ll = layer.getLatLng()
+        if (ll) bounds.extend(ll)
+        return
+      }
+      if (typeof layer.eachLayer === 'function') {
+        layer.eachLayer((l: any) => extendFromLayer(l))
+        return
+      }
+    } catch (e) {
+      console.warn('聚合边界时跳过异常图层', e)
+    }
+  }
+
+  layers.forEach(extendFromLayer)
+  if ((bounds as any)._southWest && bounds.isValid()) {
     map.fitBounds(bounds.pad(0.2))
   }
 }
@@ -399,6 +568,7 @@ const clearLayers = () => {
   if (endMarker) { map.removeLayer(endMarker); endMarker = null }
   if (weatherLayer) { map.removeLayer(weatherLayer); weatherLayer = null }
   if (accessibilityLayer) { map.removeLayer(accessibilityLayer); accessibilityLayer = null }
+  if (conditionsLayer) { map.removeLayer(conditionsLayer); conditionsLayer = null }
   if (layersControl) { map.removeControl(layersControl); layersControl = null }
   if (legendControl) { map.removeControl(legendControl); legendControl = null }
 }
@@ -438,49 +608,46 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.9);
   padding: 8px 12px;
   border-radius: 4px;
-  color: #f5222d;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  z-index: 1000;
 }
 
-.legend-control {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 10px 12px;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+/* 使 Leaflet 的 div 图标在无固定尺寸时自适应内容，避免文本挤压换行 */
+:deep(.leaflet-div-icon) {
+  background: transparent;
+  border: none;
+  width: auto;
+  height: auto;
+}
+
+/* 信息标注样式（使用深度选择器以作用于Leaflet动态创建的DOM） */
+:deep(.info-card-wrapper) { pointer-events: none; }
+:deep(.info-card) {
+  pointer-events: auto;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
   font-size: 12px;
-  color: #333;
+  min-width: 160px;
+  white-space: nowrap;
 }
-.legend-control .legend-title {
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-.legend-control .legend-item {
-  display: flex;
-  align-items: center;
-  margin: 3px 0;
-}
-.legend-control .legend-item .color {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 6px;
-  border-radius: 2px;
-}
-.legend-control .legend-section + .legend-section {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #eee;
-}
+:deep(.info-title) { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+:deep(.info-item) { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; }
+:deep(.info-item .dot) { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+:deep(.info-item .k) { color: #606266; }
+:deep(.info-item .v) { color: #303133; font-weight: 500; }
 
-/* 弹窗表格样式 */
-:deep(.leaflet-popup-content) .popup-table {
-  border-collapse: collapse;
-  width: 100%;
+/* 图例控件样式（使用深度选择器） */
+:deep(.legend-control) {
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  font-size: 12px;
 }
-:deep(.leaflet-popup-content) .popup-table td {
-  border-bottom: 1px solid #eee;
-  padding: 4px 6px;
-  vertical-align: top;
-}
+:deep(.legend-section) { margin-bottom: 6px; }
+:deep(.legend-title) { font-weight: 600; margin-bottom: 6px; }
+:deep(.legend-item) { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+:deep(.legend-item .color) { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 </style>

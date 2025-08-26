@@ -1,8 +1,10 @@
 <template>
   <div class="system-config-view">
     <div class="page-header">
-      <h1>系统配置</h1>
-      <p>管理系统参数和配置项</p>
+      <div class="header-left">
+        <h2>系统配置</h2>
+        <p>管理系统参数和配置项</p>
+      </div>
     </div>
 
     <div class="content-area">
@@ -23,7 +25,8 @@
                   <el-input v-model="filters.config_key" placeholder="请输入配置键" clearable />
                 </el-form-item>
                 <el-form-item label="分类">
-                  <el-select v-model="filters.category" placeholder="选择分类" clearable>
+                  <!-- 过滤条件：分类下拉框文案统一 -->
+                  <el-select v-model="filters.category" placeholder="请选择分类" clearable>
                     <el-option label="系统设置" value="system" />
                     <el-option label="评估设置" value="assessment" />
                     <el-option label="预警设置" value="warning" />
@@ -62,15 +65,17 @@
               </el-table-column>
               <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
-                  <el-button size="small" @click="editConfig(row)">编辑</el-button>
-                  <el-button 
-                    size="small" 
-                    type="danger" 
-                    @click="deleteConfig(row.id)"
-                    :disabled="!row.is_active"
-                  >
-                    删除
-                  </el-button>
+                  <div class="action-buttons">
+                    <el-button size="small" @click="editConfig(row)">编辑</el-button>
+                    <el-button 
+                      size="small" 
+                      type="danger" 
+                      @click="deleteConfig(row.id)"
+                      :disabled="!row.is_active"
+                    >
+                      删除
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -210,7 +215,7 @@
           <el-input v-model="configForm.config_value" />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-select v-model="configForm.category" style="width: 100%">
+          <el-select v-model="configForm.category" placeholder="请选择分类" style="width: 100%">
             <el-option label="系统设置" value="system" />
             <el-option label="评估设置" value="assessment" />
             <el-option label="预警设置" value="warning" />
@@ -256,7 +261,7 @@ const fileInputRef = ref<HTMLInputElement>()
 
 const filters = reactive({
   config_key: '',
-  category: ''
+  category: undefined as 'system' | 'assessment' | 'warning' | 'map' | 'emergency' | 'data' | 'notification' | 'api' | undefined
 })
 
 const pagination = reactive({
@@ -332,7 +337,7 @@ const loadConfigs = async () => {
 const resetFilters = () => {
   Object.assign(filters, {
     config_key: '',
-    category: ''
+    category: undefined
   })
   loadConfigs()
 }
@@ -672,18 +677,29 @@ onMounted(() => {
 }
 
 .page-header {
-  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.page-header h1 {
-  margin: 0 0 8px 0;
+
+
+.header-left h2 {
+  margin: 0;
   font-size: 24px;
   font-weight: 600;
+  color: #333;
 }
 
-.page-header p {
-  margin: 0;
+
+
+.header-left p {
+  margin: 6px 0 0 0;
   color: #666;
+  font-size: 13px;
 }
 
 .card-header {

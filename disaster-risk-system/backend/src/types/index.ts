@@ -170,13 +170,24 @@ export interface MonitoringStation {
   name: string;
   location?: Point;
   station_type: string;
+  monitoring_type?: string;
+  address?: string;
+  elevation?: number;
   equipment_info?: any;
   installation_date?: Date;
+  installation_status?: string;
   maintenance_schedule?: any;
   data_transmission_interval?: number;
+  power_source?: string;
+  communication_method?: string;
+  contact_info?: any;
+  technical_specs?: any;
   is_active: boolean;
   zone_id?: number;
+  last_maintenance_date?: Date;
+  next_maintenance_date?: Date;
   created_at: Date;
+  updated_at: Date;
 }
 
 // 风险评估类型
@@ -225,6 +236,14 @@ export interface Shelter {
 export interface UserReport {
   id: number;
   user_id: number;
+  user?: {
+    id: number;
+    username: string;
+    full_name?: string;
+    role?: string;
+    department?: string;
+    avatar_url?: string;
+  };
   location?: Point;
   report_type: string;
   disaster_type_id?: number;
@@ -235,6 +254,13 @@ export interface UserReport {
   videos?: any;
   verification_status: string;
   verified_by?: number;
+  verified_by_user?: {
+    id: number;
+    username: string;
+    full_name?: string;
+    role?: string;
+    department?: string;
+  };
   verified_at?: Date;
   verification_notes?: string;
   upvotes: number;

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { BaseController } from './BaseController';
 export declare class RiskAssessmentController extends BaseController {
     private riskAssessmentService;
+    private riskAssessmentModel;
     constructor();
     assessZoneRisk: (req: Request, res: Response, next: import("express").NextFunction) => void;
     batchAssessRisk: (req: Request, res: Response, next: import("express").NextFunction) => void;
@@ -14,5 +15,6 @@ export declare class RiskAssessmentController extends BaseController {
     updateRiskAssessment: (req: Request, res: Response, next: import("express").NextFunction) => void;
     deleteRiskAssessment: (req: Request, res: Response, next: import("express").NextFunction) => void;
     getRiskAssessmentStats: (req: Request, res: Response, next: import("express").NextFunction) => void;
+    exportRiskAssessments: (req: Request, res: Response, next: import("express").NextFunction) => void;
 }
 //# sourceMappingURL=RiskAssessmentController.d.ts.map

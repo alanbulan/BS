@@ -6,6 +6,60 @@ class UserReportModel extends BaseModel_1.BaseModel {
     constructor() {
         super('user_reports');
     }
+    async findById(id) {
+        const sql = `
+      SELECT 
+        ur.*,
+        u.username, u.full_name as user_full_name, u.role as user_role,
+        u.department as user_department, u.avatar_url as user_avatar,
+        vu.username as verified_by_username, vu.full_name as verified_by_full_name,
+        vu.role as verified_by_role, vu.department as verified_by_department
+      FROM user_reports ur
+      LEFT JOIN users u ON ur.user_id = u.id
+      LEFT JOIN users vu ON ur.verified_by = vu.id
+      WHERE ur.id = $1
+    `;
+        const result = await this.executeQuery(sql, [id]);
+        if (result.rows.length === 0) {
+            return null;
+        }
+        const row = result.rows[0];
+        if (row.user_id && row.username) {
+            row.user = {
+                id: row.user_id,
+                username: row.username,
+                full_name: row.user_full_name,
+                role: row.user_role,
+                department: row.user_department,
+                avatar_url: row.user_avatar
+            };
+        }
+        else {
+            row.user = null;
+        }
+        if (row.verified_by && row.verified_by_username) {
+            row.verified_by_user = {
+                id: row.verified_by,
+                username: row.verified_by_username,
+                full_name: row.verified_by_full_name,
+                role: row.verified_by_role,
+                department: row.verified_by_department
+            };
+        }
+        else {
+            row.verified_by_user = null;
+        }
+        delete row.username;
+        delete row.user_full_name;
+        delete row.user_role;
+        delete row.user_department;
+        delete row.user_avatar;
+        delete row.verified_by_username;
+        delete row.verified_by_full_name;
+        delete row.verified_by_role;
+        delete row.verified_by_department;
+        return row;
+    }
     async create(data) {
         const sql = `
       INSERT INTO user_reports (
@@ -37,63 +91,68 @@ class UserReportModel extends BaseModel_1.BaseModel {
         if (options.conditions) {
             const { user_id, report_type, disaster_type_id, verification_status, min_severity, max_severity, is_emergency, start_date, end_date, search } = options.conditions;
             if (user_id) {
-                whereClause += ` AND user_id = $${paramIndex}`;
+                whereClause += ` AND ur.user_id = $${paramIndex}`;
                 params.push(user_id);
                 paramIndex++;
             }
             if (report_type) {
-                whereClause += ` AND report_type = $${paramIndex}`;
+                whereClause += ` AND ur.report_type = $${paramIndex}`;
                 params.push(report_type);
                 paramIndex++;
             }
             if (disaster_type_id) {
-                whereClause += ` AND disaster_type_id = $${paramIndex}`;
+                whereClause += ` AND ur.disaster_type_id = $${paramIndex}`;
                 params.push(disaster_type_id);
                 paramIndex++;
             }
             if (verification_status) {
-                whereClause += ` AND verification_status = $${paramIndex}`;
+                whereClause += ` AND ur.verification_status = $${paramIndex}`;
                 params.push(verification_status);
                 paramIndex++;
             }
             if (min_severity) {
-                whereClause += ` AND severity >= $${paramIndex}`;
+                whereClause += ` AND ur.severity >= $${paramIndex}`;
                 params.push(min_severity);
                 paramIndex++;
             }
             if (max_severity) {
-                whereClause += ` AND severity <= $${paramIndex}`;
+                whereClause += ` AND ur.severity <= $${paramIndex}`;
                 params.push(max_severity);
                 paramIndex++;
             }
             if (is_emergency !== undefined) {
-                whereClause += ` AND is_emergency = $${paramIndex}`;
+                whereClause += ` AND ur.is_emergency = $${paramIndex}`;
                 params.push(is_emergency);
                 paramIndex++;
             }
             if (start_date) {
-                whereClause += ` AND created_at >= $${paramIndex}`;
+                whereClause += ` AND ur.created_at >= $${paramIndex}`;
                 params.push(start_date);
                 paramIndex++;
             }
             if (end_date) {
-                whereClause += ` AND created_at <= $${paramIndex}`;
+                whereClause += ` AND ur.created_at <= $${paramIndex}`;
                 params.push(end_date);
                 paramIndex++;
             }
             if (search) {
-                whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+                whereClause += ` AND (ur.title ILIKE $${paramIndex} OR ur.description ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
         }
-        const countSql = `SELECT COUNT(*) FROM user_reports ${whereClause}`;
+        const countSql = `SELECT COUNT(*) FROM user_reports ur ${whereClause}`;
         const countResult = await this.executeQuery(countSql, params);
         const total = parseInt(countResult.rows[0].count);
         const dataSql = `
-      SELECT * FROM user_reports 
+      SELECT 
+        ur.*,
+        u.username, u.full_name as user_full_name, u.role as user_role,
+        u.department as user_department, u.avatar_url as user_avatar
+      FROM user_reports ur
+      LEFT JOIN users u ON ur.user_id = u.id 
       ${whereClause}
-      ORDER BY ${options.sort.field} ${options.sort.order}
+      ORDER BY ${`ur.${options.sort.field}`} ${options.sort.order}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
         const dataResult = await this.executeQuery(dataSql, [
@@ -101,8 +160,29 @@ class UserReportModel extends BaseModel_1.BaseModel {
             options.pagination.limit,
             options.pagination.offset
         ]);
+        const rows = dataResult.rows.map(row => {
+            if (row.user_id && row.username) {
+                row.user = {
+                    id: row.user_id,
+                    username: row.username,
+                    full_name: row.user_full_name,
+                    role: row.user_role,
+                    department: row.user_department,
+                    avatar_url: row.user_avatar
+                };
+            }
+            else {
+                row.user = null;
+            }
+            delete row.username;
+            delete row.user_full_name;
+            delete row.user_role;
+            delete row.user_department;
+            delete row.user_avatar;
+            return row;
+        });
         return {
-            data: dataResult.rows,
+            data: rows,
             pagination: {
                 page: options.pagination.page,
                 limit: options.pagination.limit,

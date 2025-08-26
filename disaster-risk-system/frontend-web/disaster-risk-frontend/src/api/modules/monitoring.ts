@@ -45,12 +45,19 @@ export const monitoringStationsApi = {
 
   // 更新站点状态
   updateStationStatus: (id: number, isActive: boolean): Promise<ApiResponse<MonitoringStation>> => {
-    return request.patch(`/monitoring/stations/${id}`, { is_active: isActive })
+    return request.put(`/monitoring/stations/${id}`, { is_active: isActive })
   },
 
   // 批量更新站点状态
-  batchUpdateStationStatus: (ids: number[], isActive: boolean): Promise<ApiResponse<null>> => {
-    return request.post('/monitoring/stations/batch-update-status', { ids, is_active: isActive })
+  batchUpdateStationStatus: (ids: number[], isActiveOrOptions: boolean | { is_active?: boolean; installation_status?: string }): Promise<ApiResponse<{ updated_count: number }>> => {
+    const payload: any = { station_ids: ids }
+    if (typeof isActiveOrOptions === 'boolean') {
+      payload.is_active = isActiveOrOptions
+    } else if (isActiveOrOptions && typeof isActiveOrOptions === 'object') {
+      if (typeof isActiveOrOptions.is_active === 'boolean') payload.is_active = isActiveOrOptions.is_active
+      if (isActiveOrOptions.installation_status) payload.installation_status = isActiveOrOptions.installation_status
+    }
+    return request.post('/monitoring/stations/batch-update-status', payload)
   },
 
   // 获取站点统计信息

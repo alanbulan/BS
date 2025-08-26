@@ -1,11 +1,44 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.decryptSensitiveData = exports.encryptSensitiveData = exports.generateCSRFToken = exports.safeCompare = exports.generateKeyPair = exports.verifySignature = exports.generateSignature = exports.base64UrlDecode = exports.base64UrlEncode = exports.base64Decode = exports.base64Encode = exports.generateVerificationCode = exports.generateResetToken = exports.generateAPIKey = exports.generateRefreshToken = exports.decodeJWT = exports.verifyJWT = exports.generateJWT = exports.verifyPassword = exports.hashPassword = exports.sha512 = exports.sha256 = exports.md5 = exports.hmac = exports.hash = exports.simpleDecrypt = exports.simpleEncrypt = exports.decrypt = exports.encrypt = exports.generateIV = exports.generateKey = exports.generateUUID = exports.generateRandomNumber = exports.generateRandomString = void 0;
 const crypto_1 = __importDefault(require("crypto"));
-const bcrypt_1 = __importDefault(require("bcrypt"));
+const bcrypt = __importStar(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const ENCRYPTION_CONFIG = {
     algorithm: 'aes-256-gcm',
@@ -109,7 +142,7 @@ const sha512 = (text) => {
 exports.sha512 = sha512;
 const hashPassword = async (password) => {
     try {
-        return await bcrypt_1.default.hash(password, ENCRYPTION_CONFIG.saltRounds);
+        return await bcrypt.hash(password, ENCRYPTION_CONFIG.saltRounds);
     }
     catch (error) {
         throw new Error(`Password hashing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -118,7 +151,7 @@ const hashPassword = async (password) => {
 exports.hashPassword = hashPassword;
 const verifyPassword = async (password, hashedPassword) => {
     try {
-        return await bcrypt_1.default.compare(password, hashedPassword);
+        return await bcrypt.compare(password, hashedPassword);
     }
     catch (error) {
         throw new Error(`Password verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

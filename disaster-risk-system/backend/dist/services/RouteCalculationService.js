@@ -243,10 +243,23 @@ class RouteCalculationService {
             if (!route) {
                 throw new Error('路径不存在');
             }
-            const endPoint = {
-                type: 'Point',
-                coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
-            };
+            let endPoint = null;
+            if (route.end_point) {
+                endPoint = {
+                    type: 'Point',
+                    coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
+                };
+            }
+            else if (route.route_geometry?.coordinates?.length) {
+                const last = route.route_geometry.coordinates[route.route_geometry.coordinates.length - 1];
+                endPoint = {
+                    type: 'Point',
+                    coordinates: [last[0], last[1]]
+                };
+            }
+            if (!endPoint) {
+                throw new Error('路径缺少终点几何信息');
+            }
             const remainingDistance = this.calculateDistance(currentLocation, endPoint);
             const remainingTime = this.estimateTime(remainingDistance, 'walking');
             const nextInstruction = this.generateNextInstruction(currentLocation, route);
@@ -270,7 +283,7 @@ class RouteCalculationService {
     }
     generateNextInstruction(currentLocation, route) {
         try {
-            const pathPoints = route.path_points?.coordinates || [];
+            const pathPoints = route.route_geometry?.coordinates || [];
             if (pathPoints.length === 0) {
                 return '继续前往目的地';
             }
@@ -314,16 +327,29 @@ class RouteCalculationService {
             if (!route) {
                 return true;
             }
-            const endPoint = {
-                type: 'Point',
-                coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
-            };
+            let endPoint = null;
+            if (route.end_point) {
+                endPoint = {
+                    type: 'Point',
+                    coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
+                };
+            }
+            else if (route.route_geometry?.coordinates?.length) {
+                const last = route.route_geometry.coordinates[route.route_geometry.coordinates.length - 1];
+                endPoint = {
+                    type: 'Point',
+                    coordinates: [last[0], last[1]]
+                };
+            }
+            if (!endPoint) {
+                return true;
+            }
             const currentRiskZones = await this.getRiskZonesAlongRoute(currentLocation, endPoint);
             const highRiskZones = currentRiskZones.filter(zone => zone.current_risk_level >= 4);
             if (highRiskZones.length > 0) {
                 return true;
             }
-            const pathPoints = route.path_points?.coordinates || [];
+            const pathPoints = route.route_geometry?.coordinates || [];
             if (pathPoints.length > 0) {
                 let minDistanceToPath = Infinity;
                 for (const pathPoint of pathPoints) {

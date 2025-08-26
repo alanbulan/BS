@@ -1,6 +1,7 @@
 // 加密工具函数
 import crypto from 'crypto';
-import bcrypt from 'bcrypt';
+// 将原来的 bcrypt 替换为 bcryptjs，保持与项目其余部分一致
+import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type { StringValue } from 'ms';
 

@@ -19,6 +19,8 @@ export interface CreateMonitoringStationData {
     technical_specs?: any;
     is_active?: boolean;
     zone_id?: number;
+    last_maintenance_date?: Date;
+    next_maintenance_date?: Date;
     [key: string]: any;
 }
 export interface UpdateMonitoringStationData {

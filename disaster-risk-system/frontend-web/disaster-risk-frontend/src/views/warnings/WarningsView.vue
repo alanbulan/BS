@@ -202,38 +202,40 @@
             {{ formatDateTime(row.expiry_time) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewDetail(row)"
-            >
-              详情
-            </el-button>
-            <el-button
-              v-if="row.status === 'active'"
-              type="warning"
-              size="small"
-              @click="updateWarning(row)"
-            >
-              更新
-            </el-button>
-            <el-button
-              v-if="row.status === 'active'"
-              type="danger"
-              size="small"
-              @click="cancelWarning(row.id)"
-            >
-              取消
-            </el-button>
-            <el-button
-              type="info"
-              size="small"
-              @click="editWarning(row)"
-            >
-              编辑
-            </el-button>
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                @click="viewDetail(row)"
+              >
+                详情
+              </el-button>
+              <el-button
+                v-if="row.status === 'active'"
+                type="warning"
+                size="small"
+                @click="updateWarning(row)"
+              >
+                更新
+              </el-button>
+              <el-button
+                v-if="row.status === 'active'"
+                type="danger"
+                size="small"
+                @click="cancelWarning(row.id)"
+              >
+                取消
+              </el-button>
+              <el-button
+                type="info"
+                size="small"
+                @click="editWarning(row)"
+              >
+                编辑
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -535,7 +537,7 @@
         </el-form-item>
         
         <el-form-item label="新预警等级">
-              <el-select v-model="updateData.warning_level" placeholder="选择新的预警等级" style="width: 100%">
+              <el-select v-model="updateData.warning_level" placeholder="请选择新的预警等级" style="width: 100%">
                 <el-option label="保持不变" :value="undefined" />
                 <el-option
                   v-for="level in warningLevels"

@@ -84,17 +84,15 @@
             <el-option label="其他" value="other" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item label="启用状态">
           <el-select
-            v-model="queryParams.status"
-            placeholder="请选择状态"
+            v-model="queryParams.is_active"
+            placeholder="请选择启用状态"
             clearable
             style="width: 120px"
           >
-            <el-option label="可用" value="available" />
-            <el-option label="维护中" value="maintenance" />
-            <el-option label="已满" value="full" />
-            <el-option label="不可用" value="unavailable" />
+            <el-option label="激活" :value="true" />
+            <el-option label="停用" :value="false" />
           </el-select>
         </el-form-item>
         <el-form-item label="管理机构">
@@ -165,33 +163,35 @@
         <el-table-column prop="contact_phone" label="联系电话" width="120" />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewDetail(row)"
-            >
-              详情
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="editShelter(row)"
-            >
-              编辑
-            </el-button>
-            <el-popconfirm
-              title="确定要删除这个避难所吗？"
-              @confirm="deleteShelter(row.id)"
-            >
-              <template #reference>
-                <el-button
-                  type="danger"
-                  size="small"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                @click="viewDetail(row)"
+              >
+                详情
+              </el-button>
+              <el-button
+                type="warning"
+                size="small"
+                @click="editShelter(row)"
+              >
+                编辑
+              </el-button>
+              <el-popconfirm
+                title="确定要删除这个避难所吗？"
+                @confirm="deleteShelter(row.id)"
+              >
+                <template #reference>
+                  <el-button
+                    type="danger"
+                    size="small"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -661,7 +661,8 @@ const queryParams = reactive({
   page_size: 20,
   name: '',
   shelter_type: undefined as string | undefined,
-  status: undefined as string | undefined,
+  // 移除无效的 status 字段，使用数据库真实字段 is_active
+  is_active: undefined as boolean | undefined,
   management_agency: ''
 })
 
@@ -795,7 +796,8 @@ const resetQuery = () => {
     page_size: 20,
     name: '',
     shelter_type: undefined,
-    status: undefined,
+    // 重置为未选择状态
+    is_active: undefined as boolean | undefined,
     management_agency: ''
   })
   loadShelters()

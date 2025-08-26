@@ -22,6 +22,7 @@ import UserReportsView from '../views/user-reports/UserReportsView.vue'
 import UsersView from '../views/users/UsersView.vue'
 import UserDetailView from '../views/users/UserDetailView.vue'
 import SystemConfigView from '../views/system-config/SystemConfigView.vue'
+import UserReportDetailView from '../views/user-reports/UserReportDetailView.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -115,6 +116,12 @@ const routes: RouteRecordRaw[] = [
         path: 'user-reports',
         name: 'UserReports',
         component: UserReportsView,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: 'user-reports/:id',
+        name: 'UserReportDetail',
+        component: UserReportDetailView,
         meta: { requiresAuth: true }
       },
       {

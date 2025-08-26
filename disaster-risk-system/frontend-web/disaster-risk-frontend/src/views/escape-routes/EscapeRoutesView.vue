@@ -1,8 +1,10 @@
 <template>
   <div class="escape-routes-view">
     <div class="page-header">
-      <h1>逃生路径管理</h1>
-      <p>管理和维护应急逃生路径信息</p>
+      <div class="header-left">
+        <h2>逃生路径管理</h2>
+        <p>管理和维护应急逃生路径信息</p>
+      </div>
     </div>
 
     <div class="content-area">
@@ -24,7 +26,7 @@
               <el-input v-model="filters.route_id" placeholder="请输入路径编号" clearable />
             </el-form-item>
             <el-form-item label="难度等级">
-              <el-select v-model="filters.difficulty_level" placeholder="选择难度等级" clearable>
+              <el-select v-model="filters.difficulty_level" placeholder="请选择难度等级" clearable>
                 <el-option label="简单" :value="1" />
                 <el-option label="一般" :value="2" />
                 <el-option label="困难" :value="3" />
@@ -33,7 +35,7 @@
               </el-select>
             </el-form-item>
             <el-form-item label="验证状态">
-              <el-select v-model="filters.verification_status" placeholder="选择验证状态" clearable>
+              <el-select v-model="filters.verification_status" placeholder="请选择验证状态" clearable>
                 <el-option label="待验证" value="pending" />
                 <el-option label="已验证" value="verified" />
                 <el-option label="已拒绝" value="rejected" />
@@ -113,22 +115,24 @@
           <el-table-column prop="updated_at" label="更新时间" width="170" />
           <el-table-column label="操作" width="300" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" @click="viewRoute(row)">详情</el-button>
-              <el-button size="small" type="primary" @click="editRoute(row)">编辑</el-button>
-              <el-dropdown @command="(cmd: 'verified'|'pending'|'rejected') => onVerifyCommand(row, cmd)" style="margin-left: 8px;">
-                <el-button size="small" type="success">
-                  审核
-                  <el-icon style="margin-left: 4px;"><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="verified">设为已验证</el-dropdown-item>
-                    <el-dropdown-item command="pending">设为待验证</el-dropdown-item>
-                    <el-dropdown-item command="rejected">设为已拒绝</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button size="small" type="danger" @click="deleteRoute(row.id)">删除</el-button>
+              <div class="action-buttons">
+                <el-button size="small" @click="viewRoute(row)">详情</el-button>
+                <el-button size="small" type="primary" @click="editRoute(row)">编辑</el-button>
+                <el-dropdown @command="(cmd: 'verified'|'pending'|'rejected') => onVerifyCommand(row, cmd)">
+                  <el-button size="small" type="success">
+                    审核
+                    <el-icon style="margin-left: 4px;"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="verified">设为已验证</el-dropdown-item>
+                      <el-dropdown-item command="pending">设为待验证</el-dropdown-item>
+                      <el-dropdown-item command="rejected">设为已拒绝</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <el-button size="small" type="danger" @click="deleteRoute(row.id)">删除</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -177,7 +181,7 @@ const routes = ref<EscapeRoute[]>([])
 const filters = reactive({
   route_id: '',
   difficulty_level: undefined as number | undefined,
-  verification_status: ''
+  verification_status: undefined as ('pending' | 'verified' | 'rejected') | undefined
 })
 
 const pagination = reactive({
@@ -194,14 +198,13 @@ const pagination = reactive({
 const loadRoutes = async () => {
   loading.value = true
   try {
-    const params = {
+    const response = await escapeRoutesApi.getEscapeRoutes({
       page: pagination.page,
       limit: pagination.limit,
-      ...filters
-    }
-    
-    const response = await escapeRoutesApi.getEscapeRoutes(params)
-    
+      route_id: filters.route_id,
+      difficulty_level: filters.difficulty_level,
+      verification_status: filters.verification_status
+    })
     if (response.success) {
       routes.value = Array.isArray(response.data) ? response.data : []
       pagination.total = response.pagination?.total || 0
@@ -223,8 +226,8 @@ const loadRoutes = async () => {
 const resetFilters = () => {
   Object.assign(filters, {
     route_id: '',
-    difficulty_level: undefined,
-    verification_status: ''
+    difficulty_level: undefined as number | undefined,
+    verification_status: undefined as ('pending' | 'verified' | 'rejected') | undefined
   })
   loadRoutes()
 }
@@ -394,18 +397,23 @@ const verifyRouteAction = async (id: number, status: 'verified' | 'pending' | 'r
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.page-header h1 {
+.header-left h2 {
   margin: 0 0 8px 0;
-  font-size: 24px;
-  font-weight: 600;
+  color: #303133;
 }
 
-.page-header p {
+.header-left p {
   margin: 0;
-  color: #666;
+  color: #909399;
+  font-size: 14px;
 }
 
 .card-header {

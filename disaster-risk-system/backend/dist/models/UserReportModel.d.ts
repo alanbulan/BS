@@ -2,6 +2,7 @@ import { BaseModel } from './BaseModel';
 import { UserReport, LocationQuery } from '../types';
 export declare class UserReportModel extends BaseModel {
     constructor();
+    findById(id: number): Promise<UserReport | null>;
     create(data: Omit<UserReport, 'id' | 'created_at' | 'updated_at'>): Promise<UserReport>;
     findWithPagination(options: {
         conditions?: any;

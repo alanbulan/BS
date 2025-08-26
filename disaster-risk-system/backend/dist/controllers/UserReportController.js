@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserReportController = void 0;
 const BaseController_1 = require("./BaseController");
 const UserReportModel_1 = require("../models/UserReportModel");
+const utils_1 = require("../utils");
 class UserReportController extends BaseController_1.BaseController {
     constructor() {
         super();
@@ -210,6 +211,23 @@ class UserReportController extends BaseController_1.BaseController {
             catch (error) {
                 console.error('获取报告类型列表失败:', error);
                 this.error(res, '获取报告类型列表失败: ' + error.message, 500);
+            }
+        };
+        this.getReportConstants = async (_req, res) => {
+            try {
+                const data = {
+                    reportTypes: utils_1.REPORT_TYPES,
+                    reportTypeLabels: utils_1.REPORT_TYPE_LABELS,
+                    verificationStatuses: utils_1.VERIFICATION_STATUSES,
+                    verificationStatusLabels: utils_1.VERIFICATION_STATUS_LABELS,
+                    severityLevels: utils_1.SEVERITY_LEVELS,
+                    severityLevelLabels: utils_1.SEVERITY_LEVEL_LABELS
+                };
+                this.success(res, data, '获取报告常量成功');
+            }
+            catch (error) {
+                console.error('获取报告常量失败:', error);
+                this.error(res, '获取报告常量失败: ' + error.message, 500);
             }
         };
         this.deleteUserReport = async (req, res) => {

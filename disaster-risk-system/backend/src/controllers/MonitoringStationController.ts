@@ -49,6 +49,11 @@ export class MonitoringStationController extends BaseController {
       remark
     } = req.body;
 
+    // 兼容旧字段：若传入 altitude 且未提供 elevation，则映射为 elevation
+    if (altitude !== undefined && req.body.elevation === undefined) {
+      req.body.elevation = altitude;
+    }
+
     // 1. station_id唯一性检查
     const existingStation = await this.stationModel.findByStationId(station_id);
     if (existingStation) {
@@ -114,16 +119,6 @@ export class MonitoringStationController extends BaseController {
       const result = await this.stationModel.paginate(page, limit, conditions);
       console.error('=== paginate方法调用完成 ===');
       
-      // 强制调试输出
-      console.error('\n=== CONTROLLER 强制调试 ===');
-      console.error('查询结果数量:', result.data.length);
-      if (result.data.length > 0) {
-        console.error('第一条数据:', JSON.stringify(result.data[0], null, 2));
-        console.error('字段列表:', Object.keys(result.data[0]));
-        console.error('location_wkt存在:', !!result.data[0].location_wkt);
-        console.error('location_wkt值:', result.data[0].location_wkt);
-      }
-      console.error('=== CONTROLLER 调试结束 ===\n');
       
       const pagination = {
           page: result.pagination.page,
@@ -208,6 +203,11 @@ export class MonitoringStationController extends BaseController {
       next_maintenance_date,
       remark
     } = req.body;
+
+    // 兼容旧字段：若传入 altitude 且未提供 elevation，则映射为 elevation
+    if (altitude !== undefined && req.body.elevation === undefined) {
+      req.body.elevation = altitude;
+    }
 
     try {
       // 1. 检查监测站是否存在

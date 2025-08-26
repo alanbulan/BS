@@ -1,0 +1,54 @@
+/* 全局页面头部样式 */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.header-left h2 {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  color: #303133;
+}
+
+.header-left p {
+  margin: 0;
+  color: #909399;
+}
+
+/* --------------------------------------------
+   全局：筛选区表单在 flex 布局下 el-select 占位符被压缩问题
+   解决方案：为筛选区内的 el-select / el-input 设置最小宽度，
+   并避免 flex 收缩，确保 placeholder 文本有足够展示空间。
+--------------------------------------------- */
+.filter-section .el-form-item {
+  flex: 0 0 auto; /* 阻止每个表单项在父级 flex 中被压缩 */
+}
+
+.filter-section .el-form-item__content {
+  flex: 0 0 auto;
+}
+
+.filter-section .el-select,
+.filter-section .el-input {
+  min-width: 180px; /* 提高最小宽度，确保中文占位符完整展示 */
+}
+
+/* --------------------------------------------
+   全局：表格操作列按钮一排显示（不换行）与间距统一
+   用法：在表格操作列的 slot 内用 <div class="action-buttons"> 包裹
+--------------------------------------------- */
+.action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.action-buttons .el-button,
+.action-buttons .el-dropdown {
+  margin: 0; /* 清除内联间距，统一用 gap 控制 */
+  flex: 0 0 auto; /* 避免在窄列中被压缩换行 */
+}

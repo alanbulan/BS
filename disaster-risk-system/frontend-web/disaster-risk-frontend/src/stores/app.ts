@@ -19,10 +19,11 @@ export const useAppStore = defineStore('app', () => {
   const dashboardStats = ref<DashboardStats>({
     totalZones: 0,
     activeWarnings: 0,
-    monitoringStations: 0,
-    availableShelters: 0,
-    highRiskZones: 0,
-    recentReports: 0
+    onlineStations: 0,
+    riskAssessments: 0,
+    totalShelters: 0,
+    totalUsers: 0,
+    totalReports: 0
   })
   
   // 风险等级统计
@@ -139,10 +140,11 @@ export const useAppStore = defineStore('app', () => {
     dashboardStats.value = {
       totalZones: 0,
       activeWarnings: 0,
-      monitoringStations: 0,
-      availableShelters: 0,
-      highRiskZones: 0,
-      recentReports: 0
+      onlineStations: 0,
+      riskAssessments: 0,
+      totalShelters: 0,
+      totalUsers: 0,
+      totalReports: 0
     }
     riskLevelStats.value = {
       level1: 0,

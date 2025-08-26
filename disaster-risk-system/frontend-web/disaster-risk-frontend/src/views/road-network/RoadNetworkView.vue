@@ -212,37 +212,32 @@
         </el-table-column>
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewDetails(row)"
-            >
-              详情
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="editRoad(row)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              type="info"
-              size="small"
-              @click="viewOnMap(row)"
-            >
-              地图
-            </el-button>
-            <el-popconfirm
-              title="确定要删除这条道路吗？"
-              @confirm="deleteRoad(row.id)"
-            >
-              <template #reference>
-                <el-button type="danger" size="small">
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                @click="viewDetails(row)"
+              >
+                详情
+              </el-button>
+              <el-button
+                type="warning"
+                size="small"
+                @click="editRoad(row)"
+              >
+                编辑
+              </el-button>
+              <el-popconfirm
+                title="确定要删除这条道路吗？"
+                @confirm="deleteRoad(row.id)"
+              >
+                <template #reference>
+                  <el-button type="danger" size="small">
+                    删除
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -520,21 +515,32 @@
         <div v-if="currentRoad.geometry" class="detail-section">
           <h4>几何信息</h4>
           <el-card>
-            <pre>{{ JSON.stringify(currentRoad.geometry, null, 2) }}</pre>
+            <div style="width: 100%; height: 420px;">
+              <RoadNetworkMapComponent :roadNetwork="currentRoad" height="400px" />
+            </div>
           </el-card>
         </div>
         
         <div v-if="currentRoad.elevation_profile" class="detail-section">
           <h4>高程剖面</h4>
           <el-card>
-            <pre>{{ JSON.stringify(currentRoad.elevation_profile, null, 2) }}</pre>
+            <div style="width: 100%; height: 340px;">
+              <ElevationProfileChart :elevationData="currentRoad.elevation_profile" height="300px" />
+            </div>
+          </el-card>
+        </div>
+        
+        <div v-if="currentRoad.bridge_tunnel_info" class="detail-section">
+          <h4>桥梁隧道可视化</h4>
+          <el-card>
+            <BridgeTunnelVisuals :bridgeTunnelData="currentRoad.bridge_tunnel_info" />
           </el-card>
         </div>
         
         <div v-if="currentRoad.bridge_tunnel_info" class="detail-section">
           <h4>桥梁隧道信息</h4>
           <el-card>
-            <pre>{{ JSON.stringify(currentRoad.bridge_tunnel_info, null, 2) }}</pre>
+            <BridgeTunnelTable :bridgeTunnelData="currentRoad.bridge_tunnel_info" />
           </el-card>
         </div>
       </div>
@@ -565,6 +571,10 @@ import {
   Upload,
   UploadFilled
 } from '@element-plus/icons-vue'
+import RoadNetworkMapComponent from '../../components/RoadNetworkMapComponent.vue'
+import ElevationProfileChart from '../../components/ElevationProfileChart.vue'
+import BridgeTunnelVisuals from '../../components/BridgeTunnelVisuals.vue'
+import BridgeTunnelTable from '../../components/BridgeTunnelTable.vue'
 
 // 响应式数据
 const loading = ref(false)
@@ -606,7 +616,7 @@ const queryParams = reactive({
   search: '',
   road_id: '',
   road_type: '',
-  road_class: '',
+  road_class: undefined as number | undefined,
   maintenance_status: '',
   is_emergency_route: undefined as boolean | undefined
 })
@@ -744,7 +754,7 @@ const resetQuery = () => {
     search: '',
     road_id: '',
     road_type: '',
-    road_class: '',
+    road_class: undefined,
     maintenance_status: '',
     is_emergency_route: undefined
   })
@@ -776,19 +786,7 @@ const viewDetails = (row: RoadNetwork) => {
   showDetailDialog.value = true
 }
 
-// 在地图上查看
-const viewOnMap = (row: RoadNetwork) => {
-  // 跳转到地图页面并定位到该道路
-  router.push({
-    name: 'Map',
-    query: {
-      type: 'road',
-      id: row.id,
-      lat: row.geometry?.coordinates?.[0]?.[1] || 0,
-      lng: row.geometry?.coordinates?.[0]?.[0] || 0
-    }
-  })
-}
+
 
 // 编辑道路
 const editRoad = (row: RoadNetwork) => {
@@ -926,7 +924,7 @@ const downloadTemplate = () => {
       {
         name: '示例道路',
         road_type: 'highway',
-        road_class: 'primary',
+        road_class: 1,
         width: 12.5,
         surface_type: 'asphalt',
         max_speed: 80,
@@ -989,7 +987,7 @@ const resetForm = () => {
     road_id: '',
     name: '',
     road_type: '',
-    road_class: '',
+    road_class: 1,
     width: 10,
     surface_type: 'asphalt',
     max_speed: 60,
@@ -1087,6 +1085,7 @@ onMounted(async () => {
   // 然后加载数据
   loadRoads()
 })
+
 </script>
 
 <style scoped>
@@ -1106,6 +1105,8 @@ onMounted(async () => {
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {

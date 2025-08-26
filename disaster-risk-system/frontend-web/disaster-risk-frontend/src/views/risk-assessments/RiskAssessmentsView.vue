@@ -192,30 +192,32 @@
         <el-table-column prop="model_version" label="模型版本" width="100" />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewDetails(row)"
-            >
-              详情
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="editAssessment(row)"
-            >
-              编辑
-            </el-button>
-            <el-popconfirm
-              title="确定要删除这个评估记录吗？"
-              @confirm="deleteAssessment(row.id)"
-            >
-              <template #reference>
-                <el-button type="danger" size="small">
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                @click="viewDetails(row)"
+              >
+                详情
+              </el-button>
+              <el-button
+                type="warning"
+                size="small"
+                @click="editAssessment(row)"
+              >
+                编辑
+              </el-button>
+              <el-popconfirm
+                title="确定要删除这个评估记录吗？"
+                @confirm="deleteAssessment(row.id)"
+              >
+                <template #reference>
+                  <el-button type="danger" size="small">
+                    删除
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -470,7 +472,7 @@
       <div v-if="currentAssessment" class="assessment-detail">
         <el-descriptions :column="3" border>
           <el-descriptions-item label="评估ID">{{ currentAssessment.id }}</el-descriptions-item>
-          <el-descriptions-item label="风险区域">{{ currentAssessment.risk_zone?.name || `区域${currentAssessment.risk_zone_id}` }}</el-descriptions-item>
+          <el-descriptions-item label="风险区域">{{ currentAssessment.risk_zone?.name || (currentAssessment.zone_id !== undefined ? `区域${currentAssessment.zone_id}` : '-') }}</el-descriptions-item>
           <el-descriptions-item label="评估时间">{{ formatDateTime(currentAssessment.assessment_time) }}</el-descriptions-item>
           <el-descriptions-item label="当前风险等级">
             <el-tag :type="getRiskLevelType(currentAssessment.current_risk_level)">
@@ -489,26 +491,11 @@
           <el-descriptions-item label="建议措施" :span="3">{{ currentAssessment.recommendations || '-' }}</el-descriptions-item>
         </el-descriptions>
         
-        <div v-if="currentAssessment.contributing_factors" class="detail-section">
-          <h4>影响因素</h4>
-          <el-card>
-            <pre>{{ JSON.stringify(currentAssessment.contributing_factors, null, 2) }}</pre>
-          </el-card>
-        </div>
-        
-        <div v-if="currentAssessment.weather_conditions" class="detail-section">
-          <h4>天气条件</h4>
-          <el-card>
-            <pre>{{ JSON.stringify(currentAssessment.weather_conditions, null, 2) }}</pre>
-          </el-card>
-        </div>
-        
-        <div v-if="currentAssessment.historical_comparison" class="detail-section">
-          <h4>历史对比</h4>
-          <el-card>
-            <pre>{{ JSON.stringify(currentAssessment.historical_comparison, null, 2) }}</pre>
-          </el-card>
-        </div>
+        <RiskAssessmentVisuals
+          :contributing="(currentAssessment?.contributing_factors as any) || null"
+          :weather="(currentAssessment?.weather_conditions as any) || null"
+          :history="(currentAssessment?.historical_comparison as any) || null"
+        />
       </div>
     </el-dialog>
   </div>
@@ -534,6 +521,7 @@ import {
   Download,
   DataAnalysis
 } from '@element-plus/icons-vue'
+import RiskAssessmentVisuals from '@/components/RiskAssessmentVisuals.vue'
 
 // 响应式数据
 const loading = ref(false)
@@ -949,6 +937,8 @@ const submitForm = async () => {
     submitting.value = false
   }
 }
+
+
 
 // 组件挂载
 onMounted(() => {

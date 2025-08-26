@@ -2,8 +2,15 @@
   <div class="dashboard-container">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1>系统概览</h1>
-      <el-button :icon="Refresh" @click="refreshData" size="small">刷新</el-button>
+      <div class="header-left">
+        <h2>系统概览</h2>
+      </div>
+      <div class="header-right">
+        <el-button @click="refreshData">
+          <el-icon><Refresh /></el-icon>
+          刷新数据
+        </el-button>
+      </div>
     </div>
 
     <!-- 核心统计数据 -->
@@ -387,12 +394,11 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.page-header h1 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
+.header-left h2 {
+  margin: 0 0 8px 0;
   color: #303133;
 }
 

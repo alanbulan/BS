@@ -206,6 +206,33 @@ export const REPORT_STATUS = {
   REJECTED: 'rejected'
 } as const;
 
+// 新增：用户报告审核状态（verification_status）枚举，仅用于 user_reports.verification_status 字段
+export const VERIFICATION_STATUSES = {
+  PENDING: 'pending',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected'
+} as const;
+
+// 新增：用户报告审核状态中文标签
+export const VERIFICATION_STATUS_LABELS = {
+  [VERIFICATION_STATUSES.PENDING]: '待验证',
+  [VERIFICATION_STATUSES.VERIFIED]: '已验证',
+  [VERIFICATION_STATUSES.REJECTED]: '已拒绝'
+} as const;
+
+// 新增：用户报告严重程度枚举（数据库 user_reports.severity 取值范围 1-5）
+// 仅用于向前端提供可选范围，勿与风险等级混淆
+export const SEVERITY_LEVELS = [1, 2, 3, 4, 5] as const;
+
+// 新增：严重程度中文标签
+export const SEVERITY_LEVEL_LABELS = {
+  1: '轻微',
+  2: '一般',
+  3: '严重',
+  4: '很严重',
+  5: '极严重'
+} as const;
+
 // 报告类型
 export const REPORT_TYPES = {
   DISASTER: 'disaster',
@@ -213,6 +240,15 @@ export const REPORT_TYPES = {
   SAFETY: 'safety',
   ENVIRONMENTAL: 'environmental',
   OTHER: 'other'
+} as const;
+
+// 新增：报告类型中文标签
+export const REPORT_TYPE_LABELS = {
+  [REPORT_TYPES.DISASTER]: '灾害报告',
+  [REPORT_TYPES.INFRASTRUCTURE]: '基础设施',
+  [REPORT_TYPES.SAFETY]: '安全',
+  [REPORT_TYPES.ENVIRONMENTAL]: '环境',
+  [REPORT_TYPES.OTHER]: '其他'
 } as const;
 
 // 报告优先级

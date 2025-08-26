@@ -7,13 +7,19 @@
         <p>实时监控灾害风险指标，管理监测站点和数据</p>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="showAddStationDialog = true">
+        <el-button type="primary" @click="() => { isEditMode = false; editingStationId = null; showAddStationDialog = true }">
           <el-icon><Plus /></el-icon>
           添加监测站
         </el-button>
         <el-button @click="refreshData">
           <el-icon><Refresh /></el-icon>
           刷新数据
+        </el-button>
+        <el-button type="success" :disabled="selectedStations.length === 0" @click="confirmBatchUpdate(true)">
+          批量激活
+        </el-button>
+        <el-button type="warning" :disabled="selectedStations.length === 0" @click="confirmBatchUpdate(false)">
+          批量停用
         </el-button>
       </div>
     </div>
@@ -114,6 +120,7 @@
       <!-- 监测站点表格 -->
       <div class="table-section">
         <el-table 
+          ref="tableRef"
           :data="filteredStations" 
           v-loading="loading"
           stripe
@@ -156,9 +163,11 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click="viewStationDetail(scope.row)">详情</el-button>
-            <el-button size="small" type="primary" @click="editStation(scope.row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="deleteStation(scope.row)">删除</el-button>
+            <div class="action-buttons">
+              <el-button size="small" @click="viewStationDetail(scope.row)">详情</el-button>
+              <el-button size="small" type="primary" @click="editStation(scope.row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="deleteStation(scope.row)">删除</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -178,8 +187,8 @@
       </div>
     </div>
 
-    <!-- 添加监测站对话框 -->
-    <el-dialog v-model="showAddStationDialog" title="添加监测站" width="600px">
+    <!-- 添加/编辑监测站对话框 -->
+    <el-dialog v-model="showAddStationDialog" :title="isEditMode ? '编辑监测站' : '添加监测站'" width="600px">
       <el-form :model="stationForm" :rules="stationRules" ref="stationFormRef" label-width="100px">
         <el-form-item label="站点编码" prop="station_id">
           <el-input v-model="stationForm.station_id" placeholder="请输入站点编码" />
@@ -188,7 +197,7 @@
           <el-input v-model="stationForm.name" placeholder="请输入站点名称" />
         </el-form-item>
         <el-form-item label="监测类型" prop="station_type">
-          <el-select v-model="stationForm.station_type" placeholder="选择监测类型" filterable>
+          <el-select v-model="stationForm.station_type" placeholder="请选择监测类型" filterable>
             <el-option
               v-for="opt in stationTypeOptions"
               :key="opt.code"
@@ -206,12 +215,15 @@
         <el-form-item label="纬度" prop="latitude">
           <el-input-number v-model="stationForm.latitude" :precision="6" placeholder="纬度" />
         </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="stationForm.description" type="textarea" rows="3" placeholder="请输入描述" />
+        <el-form-item label="海拔(米)">
+          <el-input-number v-model="stationForm.elevation" :precision="2" :min="-500" :max="9000" placeholder="海拔/高程" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="stationForm.description" type="textarea" rows="3" placeholder="请输入备注" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddStationDialog = false">取消</el-button>
+        <el-button @click="handleDialogCancel">取消</el-button>
         <el-button type="primary" @click="submitStationForm">确定</el-button>
       </template>
     </el-dialog>
@@ -235,6 +247,11 @@ const router = useRouter()
 
 // 响应式数据
 const loading = ref(false)
+// 表格Ref，用于清空选择
+const tableRef = ref()
+// 对话框模式：新增/编辑
+let isEditMode = ref(false)
+let editingStationId = ref<number | null>(null)
 // 移除了顶部标签页，activeTab 不再需要
 const showAddStationDialog = ref(false)
 
@@ -286,6 +303,7 @@ const stationForm = ref({
   location: '',
   longitude: undefined as number | undefined,
   latitude: undefined as number | undefined,
+  elevation: undefined as number | undefined,
   description: ''
 })
 
@@ -388,18 +406,6 @@ const updateStationStats = () => {
   stationStats.value = stats
 }
 
-// 获取最新监测数据
-// const fetchLatestData = async () => {
-//   try {
-//     const response = await monitoringDataApi.getRealTimeData()
-//     if (response.success) {
-//       latestData.value = response.data
-//     }
-//   } catch (error) {
-//     console.error('获取最新数据失败:', error)
-//   }
-// }
-
 // 刷新数据
 const refreshData = async () => {
   await fetchStations()
@@ -447,16 +453,19 @@ const viewStationDetail = (station: MonitoringStation) => {
 
 // 编辑站点
 const editStation = (station: MonitoringStation) => {
-  // 填充表单数据
+  // 填充表单数据（修正 location/notes 映射）
   stationForm.value = {
     station_id: station.station_id,
     name: station.name,
     station_type: station.station_type,
-    location: station.zone_name || '',
+    location: station.location || '',
     longitude: station.longitude,
     latitude: station.latitude,
+    elevation: station.elevation ?? station.altitude,
     description: station.notes || ''
   }
+  isEditMode.value = true
+  editingStationId.value = station.id
   // 显示编辑对话框
   showAddStationDialog.value = true
 }
@@ -487,22 +496,57 @@ const deleteStation = async (station: MonitoringStation) => {
   }
 }
 
-// 提交监测站表单
+/**
+ * 提交监测站表单
+ * - 新增：POST /monitoring/stations
+ * - 编辑：PUT /monitoring/stations/:id
+ * - 字段映射：前端 description 字段映射为后端 notes 字段
+ */
 const submitStationForm = async () => {
   try {
     await stationFormRef.value?.validate()
-    
-    const response = await monitoringStationsApi.createStation(stationForm.value)
+
+    // 构造后端所需payload，映射 description -> notes
+    const payload: any = {
+      station_id: stationForm.value.station_id,
+      name: stationForm.value.name,
+      station_type: stationForm.value.station_type,
+      location: stationForm.value.location,
+      longitude: stationForm.value.longitude,
+      latitude: stationForm.value.latitude,
+      elevation: stationForm.value.elevation,
+      notes: stationForm.value.description || undefined
+    }
+
+    let response
+    if (isEditMode.value && editingStationId.value) {
+      response = await monitoringStationsApi.updateStation(editingStationId.value, payload)
+    } else {
+      response = await monitoringStationsApi.createStation(payload)
+    }
+
     if (response.success) {
-      ElMessage.success('添加监测站成功')
+      ElMessage.success(isEditMode.value ? '更新监测站成功' : '添加监测站成功')
       showAddStationDialog.value = false
       resetStationForm()
+      // 清理编辑状态
+      isEditMode.value = false
+      editingStationId.value = null
       fetchStations()
     }
   } catch (error) {
-    console.error('添加监测站失败:', error)
-    ElMessage.error('添加监测站失败')
+    console.error(isEditMode.value ? '更新监测站失败:' : '添加监测站失败:', error)
+    ElMessage.error(isEditMode.value ? '更新监测站失败' : '添加监测站失败')
   }
+}
+
+// 取消对话框
+const handleDialogCancel = () => {
+  showAddStationDialog.value = false
+  // 重置编辑状态
+  isEditMode.value = false
+  editingStationId.value = null
+  resetStationForm()
 }
 
 // 重置表单
@@ -514,21 +558,59 @@ const resetStationForm = () => {
     location: '',
     longitude: undefined,
     latitude: undefined,
+    elevation: undefined,
     description: ''
   }
   stationFormRef.value?.resetFields()
 }
 
-// 加载实时数据
-// const loadRealtimeData = async () => {}
-// 更新实时图表
-// const updateRealtimeChart = (_data: any) => {}
-// 查询历史数据
-// const queryHistoryData = async () => {}
-// 更新历史图表
-// const updateHistoryChart = (_data: any) => {}
-// 导出历史数据
-// const exportHistoryData = async () => {}
+/**
+ * 批量状态更新确认框
+ * @param isActive 目标状态：true 激活，false 停用
+ */
+const confirmBatchUpdate = async (isActive: boolean) => {
+  if (!selectedStations.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确定对选中的 ${selectedStations.value.length} 个监测站执行“${isActive ? '激活' : '停用'}”操作吗？`,
+      '批量状态更新',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    await batchUpdateStatus(isActive)
+  } catch (e) {
+    // 取消
+  }
+}
+
+/**
+ * 批量更新选中监测站的 is_active 状态
+ * 使用后端接口：POST /monitoring/stations/batch-update-status
+ * 请求体：{ station_ids: number[], is_active: boolean }
+ */
+const batchUpdateStatus = async (isActive: boolean) => {
+  const ids = selectedStations.value.map(s => s.id)
+  if (!ids.length) return
+  try {
+    // 在批量更新调用处，保持原有布尔入参用法（新API已向后兼容）
+    const resp = await monitoringStationsApi.batchUpdateStationStatus(ids, isActive)
+    if (resp.success) {
+      ElMessage.success(`批量更新成功，影响 ${resp.data?.updated_count ?? ids.length} 条`)
+      // 刷新并清空选择
+      await fetchStations()
+      selectedStations.value = []
+      tableRef.value?.clearSelection?.()
+    } else {
+      ElMessage.error(resp.message || '批量更新失败')
+    }
+  } catch (err) {
+    console.error('批量更新失败:', err)
+    ElMessage.error('批量更新失败')
+  }
+}
 
 // 工具函数
 const getTypeTagType = (type: string) => {
@@ -602,9 +684,7 @@ onUnmounted(() => {
 
 <style scoped>
 .monitoring-container {
-  padding: 24px;
-  background-color: #f5f7fa;
-  min-height: calc(100vh - 60px);
+  padding: 20px;
 }
 
 /* 页面头部样式 */
@@ -620,13 +700,11 @@ onUnmounted(() => {
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
-  font-size: 24px;
-  font-weight: 600;
 }
 
 .header-left p {
   margin: 0;
-  color: #606266;
+  color: #909399;
   font-size: 14px;
 }
 

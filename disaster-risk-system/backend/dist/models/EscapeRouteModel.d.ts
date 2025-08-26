@@ -68,6 +68,7 @@ export interface EscapeRouteQuery {
 }
 export declare class EscapeRouteModel extends BaseModel {
     constructor();
+    findById(id: number): Promise<EscapeRoute | null>;
     create(data: CreateEscapeRouteData): Promise<EscapeRoute>;
     findWithConditions(conditions: EscapeRouteQuery): Promise<{
         routes: EscapeRoute[];

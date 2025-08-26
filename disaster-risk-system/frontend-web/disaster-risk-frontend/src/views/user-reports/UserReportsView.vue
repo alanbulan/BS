@@ -1,8 +1,16 @@
 <template>
   <div class="user-reports-view">
     <div class="page-header">
-      <h1>用户报告管理</h1>
-      <p>查看和处理用户提交的灾害报告</p>
+      <div class="header-left">
+        <h2>用户报告管理</h2>
+        <p>查看和处理用户提交的灾害报告</p>
+      </div>
+      <div class="header-right">
+        <el-button @click="refreshData">
+          <el-icon><Refresh /></el-icon>
+          刷新数据
+        </el-button>
+      </div>
     </div>
 
     <div class="content-area">
@@ -20,7 +28,7 @@
               <el-input v-model="filters.title" placeholder="请输入报告标题" clearable />
             </el-form-item>
             <el-form-item label="报告类型">
-              <el-select v-model="filters.report_type" placeholder="选择报告类型" clearable>
+              <el-select v-model="filters.report_type" placeholder="请选择报告类型" clearable>
                 <el-option label="灾害报告" value="disaster" />
                 <el-option label="风险发现" value="risk" />
                 <el-option label="设施损坏" value="facility" />
@@ -28,14 +36,14 @@
               </el-select>
             </el-form-item>
             <el-form-item label="验证状态">
-              <el-select v-model="filters.verification_status" placeholder="选择验证状态" clearable>
+              <el-select v-model="filters.verification_status" placeholder="请选择验证状态" clearable>
                 <el-option label="待验证" value="pending" />
                 <el-option label="已验证" value="verified" />
                 <el-option label="已拒绝" value="rejected" />
               </el-select>
             </el-form-item>
             <el-form-item label="严重程度">
-              <el-select v-model="filters.severity" placeholder="选择严重程度" clearable>
+              <el-select v-model="filters.severity" placeholder="请选择严重程度" clearable>
                 <el-option label="轻微" :value="1" />
                 <el-option label="一般" :value="2" />
                 <el-option label="严重" :value="3" />
@@ -58,7 +66,11 @@
               {{ getReportTypeText(row.report_type) }}
             </template>
           </el-table-column>
-          <el-table-column prop="user.username" label="报告用户" width="120" />
+          <el-table-column prop="user.username" label="报告用户" width="120">
+            <template #default="{ row }">
+              {{ row.user?.username || `用户ID: ${row.user_id}` }}
+            </template>
+          </el-table-column>
           <el-table-column prop="severity" label="严重程度" width="100">
             <template #default="{ row }">
               <el-tag :type="getSeverityTagType(row.severity)">
@@ -86,23 +98,25 @@
           </el-table-column>
           <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" @click="viewReport(row)">详情</el-button>
-              <el-button 
-                v-if="row.verification_status === 'pending'"
-                size="small" 
-                type="success" 
-                @click="verifyReport(row.id, 'verified')"
-              >
-                验证
-              </el-button>
-              <el-button 
-                v-if="row.verification_status === 'pending'"
-                size="small" 
-                type="danger" 
-                @click="verifyReport(row.id, 'rejected')"
-              >
-                拒绝
-              </el-button>
+              <div class="action-buttons">
+                <el-button size="small" @click="viewReport(row)">详情</el-button>
+                <el-button 
+                  v-if="row.verification_status === 'pending'"
+                  size="small" 
+                  type="success" 
+                  @click="verifyReport(row.id, 'verified')"
+                >
+                  验证
+                </el-button>
+                <el-button 
+                  v-if="row.verification_status === 'pending'"
+                  size="small" 
+                  type="danger" 
+                  @click="verifyReport(row.id, 'rejected')"
+                >
+                  拒绝
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -130,15 +144,20 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UserReport } from '@/types'
 import { formatDateTime } from '@/utils'
 import { userReportsApi } from '@/api'
+import { useUserReportsStore } from '@/stores/user-reports'
+import { useRouter } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
 
+const userReportsStore = useUserReportsStore()
+const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const reports = ref<UserReport[]>([])
 
 const filters = reactive({
   title: '',
-  report_type: '',
-  verification_status: '',
+  report_type: undefined as string | undefined,
+  verification_status: undefined as ('pending' | 'verified' | 'rejected') | undefined,
   severity: undefined as number | undefined
 })
 
@@ -149,17 +168,34 @@ const pagination = reactive({
 })
 
 // 方法
+/**
+ * 加载用户报告列表
+ * - 将 filters.title 映射为后端期望的 search 参数（在标题/描述中模糊匹配）
+ * - 将单一选择的 severity 同时映射为 min_severity 与 max_severity，达到按该等级等值筛选
+ * - 其他筛选项保持原样透传：report_type、verification_status
+ */
 const loadReports = async () => {
   loading.value = true
   try {
-    const response = await userReportsApi.getUserReports({
+    const params: any = {
       page: pagination.page,
       limit: pagination.limit,
-      title: filters.title,
       report_type: filters.report_type,
-      verification_status: filters.verification_status,
-      severity: filters.severity
-    })
+      verification_status: filters.verification_status
+    }
+
+    // 标题作为 search 传递（后端对 title/description 做 ILIKE 匹配）
+    if (filters.title && filters.title.trim()) {
+      params.search = filters.title.trim()
+    }
+
+    // severity 等值筛选，映射为最小/最大相同值
+    if (typeof filters.severity === 'number') {
+      params.min_severity = filters.severity
+      params.max_severity = filters.severity
+    }
+
+    const response = await userReportsApi.getUserReports(params)
     
     if (response.success) {
       reports.value = response.data
@@ -178,35 +214,62 @@ const loadReports = async () => {
 const resetFilters = () => {
   Object.assign(filters, {
     title: '',
-    report_type: '',
-    verification_status: '',
-    severity: undefined
+    report_type: undefined as string | undefined,
+    verification_status: undefined as ('pending' | 'verified' | 'rejected') | undefined,
+    severity: undefined as number | undefined
   })
   loadReports()
 }
 
+/**
+ * 刷新数据
+ * - 触发列表重新加载，统一交互提示
+ */
+const refreshData = async () => {
+  await loadReports()
+  ElMessage.success('数据刷新成功')
+}
+
 const viewReport = (report: UserReport) => {
-  // TODO: 实现报告详情页面导航
-  console.log('查看报告:', report)
+  router.push({ name: 'UserReportDetail', params: { id: report.id } })
 }
 
 const verifyReport = async (id: number, status: 'verified' | 'rejected') => {
   try {
-    const action = status === 'verified' ? '验证' : '拒绝'
-    await ElMessageBox.confirm(`确定要${action}这个报告吗？`, `确认${action}`, {
-      type: 'warning'
-    })
-    
-    const response = await userReportsApi.verifyReport(id, status)
-    if (response.success) {
-      ElMessage.success(`${action}成功`)
-      loadReports()
+    if (status === 'verified') {
+      // 验证备注（可选）
+      const { value, action } = await ElMessageBox.prompt('请输入验证备注（可选）', '确认验证', {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        inputPlaceholder: '验证备注（可留空）',
+        inputValidator: () => true
+      })
+      if (action === 'confirm') {
+        const res = await userReportsStore.verifyReport(id, value)
+        if (res) {
+          ElMessage.success('验证成功')
+          loadReports()
+        }
+      }
     } else {
-      ElMessage.error(response.message || `${action}失败`)
+      // 拒绝原因（必填）
+      const { value, action } = await ElMessageBox.prompt('请输入拒绝原因', '确认拒绝', {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        inputPlaceholder: '拒绝原因',
+        inputValidator: (val: string) => !!val || '拒绝原因不能为空'
+      })
+      if (action === 'confirm') {
+        const res = await userReportsStore.rejectReport(id, value)
+        if (res) {
+          ElMessage.success('拒绝成功')
+          loadReports()
+        }
+      }
     }
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('验证报告失败:', error)
+    if ((error as any) !== 'cancel') {
+      console.error('验证/拒绝操作失败:', error)
       ElMessage.error('操作失败')
     }
   }
@@ -263,18 +326,23 @@ onMounted(() => {
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.page-header h1 {
+.header-left h2 {
   margin: 0 0 8px 0;
-  font-size: 24px;
-  font-weight: 600;
+  color: #303133;
 }
 
-.page-header p {
+.header-left p {
   margin: 0;
-  color: #666;
+  color: #909399;
+  font-size: 14px;
 }
 
 .card-header {

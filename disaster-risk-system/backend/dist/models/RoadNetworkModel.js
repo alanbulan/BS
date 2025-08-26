@@ -16,7 +16,23 @@ class RoadNetworkModel extends BaseModel_1.BaseModel {
       ) VALUES (
         $1, $2, ST_GeomFromGeoJSON($3), $4, $5, $6,
         $7, $8, $9, $10, $11, $12, $13, $14, $15
-      ) RETURNING *,
+      ) ON CONFLICT (road_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        geometry = EXCLUDED.geometry,
+        road_type = EXCLUDED.road_type,
+        road_class = EXCLUDED.road_class,
+        width = EXCLUDED.width,
+        surface_type = EXCLUDED.surface_type,
+        max_speed = EXCLUDED.max_speed,
+        is_bidirectional = EXCLUDED.is_bidirectional,
+        elevation_profile = EXCLUDED.elevation_profile,
+        slope_grade = EXCLUDED.slope_grade,
+        bridge_tunnel_info = EXCLUDED.bridge_tunnel_info,
+        maintenance_status = EXCLUDED.maintenance_status,
+        traffic_capacity = EXCLUDED.traffic_capacity,
+        is_emergency_route = EXCLUDED.is_emergency_route,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *,
         ST_AsGeoJSON(geometry) as geometry_json
     `;
         const values = [

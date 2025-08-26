@@ -198,30 +198,19 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewDetail(row)"
-            >
-              详情
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="editRiskZone(row)"
-            >
-              编辑
-            </el-button>
-            <el-popconfirm
-              title="确定要删除这个风险区域吗？"
-              @confirm="deleteRiskZone(row.id)"
-            >
-              <template #reference>
-                <el-button type="danger" size="small">
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+            <div class="action-buttons">
+              <el-button size="small" type="primary" @click="viewDetail(row)">
+                详情
+              </el-button>
+              <el-button size="small" type="warning" @click="editRiskZone(row)">
+                编辑
+              </el-button>
+              <el-popconfirm title="确定删除该风险区域吗？" @confirm="deleteRiskZone(row.id)">
+                <template #reference>
+                  <el-button size="small" type="danger">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -491,7 +480,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import type { RiskZone, DisasterType } from '../../types'
@@ -510,6 +500,9 @@ import {
 import { riskZonesApi } from '../../api/modules/riskZones'
 import { disasterTypesApi } from '../../api/modules/disaster-types'
 import RiskZoneMapComponent from '../../components/RiskZoneMapComponent.vue'
+
+// 路由
+const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
@@ -928,9 +921,31 @@ const submitForm = async () => {
 
 
 // 组件挂载
+// 根据路由参数打开详情
+const ensureDetailFromRoute = async () => {
+  const idParam = route.query.id
+  const idStr = Array.isArray(idParam) ? idParam[0] : (idParam ?? '')
+  const id = typeof idStr === 'string' ? parseInt(idStr, 10) : NaN
+  if (!isNaN(id)) {
+    try {
+      const resp = await riskZonesApi.getRiskZone(id)
+      if (resp.success && resp.data) {
+        currentZone.value = resp.data
+        showDetailDialog.value = true
+      }
+    } catch (e) {
+      console.error('根据路由参数加载详情失败', e)
+    }
+  }
+}
+
+watch(() => route.query.id, () => {
+  ensureDetailFromRoute()
+})
 onMounted(() => {
   loadDisasterTypes()
   loadRiskZones()
+  ensureDetailFromRoute()
 })
 </script>
 
@@ -951,6 +966,8 @@ onMounted(() => {
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {

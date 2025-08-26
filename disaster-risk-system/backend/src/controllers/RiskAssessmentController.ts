@@ -2,13 +2,17 @@ import { Request, Response } from 'express';
 import { BaseController } from './BaseController';
 import { RiskAssessmentService } from '../services/RiskAssessmentService';
 import { Point } from '../types';
+import * as ExcelJS from 'exceljs';
+import { RiskAssessmentModel } from '../models/RiskAssessmentModel';
 
 export class RiskAssessmentController extends BaseController {
   private riskAssessmentService: RiskAssessmentService;
+  private riskAssessmentModel: RiskAssessmentModel;
 
   constructor() {
     super();
     this.riskAssessmentService = new RiskAssessmentService();
+    this.riskAssessmentModel = new RiskAssessmentModel();
   }
 
   /**
@@ -256,6 +260,163 @@ export class RiskAssessmentController extends BaseController {
     } catch (error: any) {
       console.error('获取统计信息失败:', error);
       return this.serverError(res, error);
+    }
+  });
+
+  /**
+   * 导出风险评估数据
+   * 支持按ID数组筛选(ids/ids[])与可选过滤(filters: JSON)，格式支持 excel/csv
+   */
+  exportRiskAssessments = this.asyncHandler(async (req: Request, res: Response) => {
+    const { format = 'excel' } = req.query as { format?: string } as any;
+
+    try {
+      // 解析 ids 参数（兼容 ids 与 ids[] 及逗号分隔）
+      const q: any = req.query || {};
+      let rawIds: any = q.ids ?? q['ids[]'];
+      let ids: number[] | undefined;
+      if (rawIds) {
+        if (Array.isArray(rawIds)) {
+          ids = rawIds.map((v: any) => parseInt(String(v), 10)).filter((n: number) => Number.isInteger(n) && n > 0);
+        } else if (typeof rawIds === 'string') {
+          ids = rawIds.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isInteger(n) && n > 0);
+        }
+      }
+
+      // 解析 filters（与列表接口保持一致）
+      const filters = q.filters ? (() => { try { return JSON.parse(q.filters as string); } catch { return undefined; } })() : undefined;
+
+      // 构建查询 SQL
+      const conditions: string[] = [];
+      const params: any[] = [];
+      let idx = 1;
+
+      if (ids && ids.length > 0) {
+        conditions.push(`ra.id = ANY($${idx++})`);
+        params.push(ids);
+      } else if (filters) {
+        if (filters.zone_id) { conditions.push(`ra.zone_id = $${idx++}`); params.push(filters.zone_id); }
+        if (filters.risk_level_min) { conditions.push(`ra.current_risk_level >= $${idx++}`); params.push(filters.risk_level_min); }
+        if (filters.risk_level_max) { conditions.push(`ra.current_risk_level <= $${idx++}`); params.push(filters.risk_level_max); }
+        if (filters.start_time) { conditions.push(`ra.assessment_time >= $${idx++}`); params.push(filters.start_time); }
+        if (filters.end_time) { conditions.push(`ra.assessment_time <= $${idx++}`); params.push(filters.end_time); }
+        if (filters.created_by) { conditions.push(`ra.created_by = $${idx++}`); params.push(filters.created_by); }
+        if (filters.assessment_method) { conditions.push(`ra.assessment_method = $${idx++}`); params.push(filters.assessment_method); }
+      }
+
+      const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const sql = `
+        SELECT 
+          ra.id,
+          ra.zone_id,
+          rz.name AS zone_name,
+          dt.name AS disaster_type_name,
+          ra.assessment_time,
+          ra.current_risk_level,
+          ra.predicted_risk_24h,
+          ra.predicted_risk_72h,
+          ra.confidence_score,
+          ra.assessment_method,
+          ra.model_version,
+          ra.contributing_factors,
+          ra.weather_conditions,
+          ra.historical_comparison,
+          ra.recommendations
+        FROM risk_assessments ra
+        LEFT JOIN risk_zones rz ON ra.zone_id = rz.id
+        LEFT JOIN disaster_types dt ON rz.disaster_type_id = dt.id
+        ${whereClause}
+        ORDER BY ra.assessment_time DESC
+      `;
+
+      const result = await this.riskAssessmentModel.rawQuery(sql, params);
+      const rows = result.rows || [];
+
+      if ((format as string) === 'csv') {
+        // CSV 导出
+        const header = [
+          'ID', '区域ID', '区域名称', '灾害类型', '评估时间', '当前风险等级', '预测24小时', '预测72小时', '置信度', '评估方法', '模型版本', '主要因素', '天气状况', '历史对比', '建议'
+        ].join(',');
+
+        const csvRows = rows.map((r: any) => [
+          r.id,
+          r.zone_id,
+          `"${(r.zone_name || '')}"`,
+          `"${(r.disaster_type_name || '')}"`,
+          r.assessment_time ? new Date(r.assessment_time).toLocaleString('zh-CN') : '',
+          r.current_risk_level ?? '',
+          r.predicted_risk_24h ?? '',
+          r.predicted_risk_72h ?? '',
+          r.confidence_score ?? '',
+          `"${(r.assessment_method || '')}"`,
+          `"${(r.model_version || '')}"`,
+          `"${r.contributing_factors ? JSON.stringify(r.contributing_factors) : ''}"`,
+          `"${r.weather_conditions ? JSON.stringify(r.weather_conditions) : ''}"`,
+          `"${r.historical_comparison ? JSON.stringify(r.historical_comparison) : ''}"`,
+          `"${(r.recommendations || '')}"`
+        ].join(','));
+
+        const csvContent = [header, ...csvRows].join('\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=risk_assessments_${new Date().toISOString().split('T')[0]}.csv`);
+        return res.send('\ufeff' + csvContent);
+      }
+
+      // Excel 导出
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('风险评估数据');
+
+      worksheet.columns = [
+        { header: 'ID', key: 'id', width: 10 },
+        { header: '区域ID', key: 'zone_id', width: 10 },
+        { header: '区域名称', key: 'zone_name', width: 18 },
+        { header: '灾害类型', key: 'disaster_type_name', width: 14 },
+        { header: '评估时间', key: 'assessment_time', width: 20 },
+        { header: '当前风险等级', key: 'current_risk_level', width: 14 },
+        { header: '预测24小时', key: 'predicted_risk_24h', width: 12 },
+        { header: '预测72小时', key: 'predicted_risk_72h', width: 12 },
+        { header: '置信度', key: 'confidence_score', width: 10 },
+        { header: '评估方法', key: 'assessment_method', width: 16 },
+        { header: '模型版本', key: 'model_version', width: 14 },
+        { header: '主要因素', key: 'contributing_factors', width: 30 },
+        { header: '天气状况', key: 'weather_conditions', width: 24 },
+        { header: '历史对比', key: 'historical_comparison', width: 24 },
+        { header: '建议', key: 'recommendations', width: 30 }
+      ];
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF366092' } } as any;
+
+      rows.forEach((r: any) => {
+        worksheet.addRow({
+          id: r.id,
+          zone_id: r.zone_id,
+          zone_name: r.zone_name,
+          disaster_type_name: r.disaster_type_name,
+          assessment_time: r.assessment_time ? new Date(r.assessment_time).toLocaleString('zh-CN') : '',
+          current_risk_level: r.current_risk_level,
+          predicted_risk_24h: r.predicted_risk_24h,
+          predicted_risk_72h: r.predicted_risk_72h,
+          confidence_score: r.confidence_score,
+          assessment_method: r.assessment_method,
+          model_version: r.model_version,
+          contributing_factors: r.contributing_factors ? JSON.stringify(r.contributing_factors) : '',
+          weather_conditions: r.weather_conditions ? JSON.stringify(r.weather_conditions) : '',
+          historical_comparison: r.historical_comparison ? JSON.stringify(r.historical_comparison) : '',
+          recommendations: r.recommendations || ''
+        });
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=risk_assessments_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      await (workbook as any).xlsx.write(res);
+      return res.end();
+    } catch (error) {
+      console.error('导出风险评估数据失败:', error);
+      return this.serverError(res, '导出数据失败');
     }
   });
 }

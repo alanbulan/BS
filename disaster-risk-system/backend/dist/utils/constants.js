@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULTS = exports.API_VERSIONS = exports.ENVIRONMENTS = exports.ERROR_CODES = exports.REGEX_PATTERNS = exports.TIME_FORMATS = exports.UNITS = exports.GEOMETRY_TYPES = exports.COORDINATE_SYSTEMS = exports.PAGINATION = exports.CACHE_TTL = exports.CACHE_KEYS = exports.TABLE_NAMES = exports.OPERATION_TYPES = exports.LOG_LEVELS = exports.NOTIFICATION_STATUS = exports.NOTIFICATION_TYPES = exports.CONFIG_TYPES = exports.REPORT_PRIORITIES = exports.REPORT_TYPES = exports.REPORT_STATUS = exports.SHELTER_TYPES = exports.SHELTER_STATUS = exports.ROUTE_STATUS = exports.FILE_STATUS = exports.FILE_TYPES = exports.MONITORING_DATA_TYPES = exports.STATION_STATUS = exports.WARNING_STATUS = exports.WARNING_LEVEL_LABELS = exports.WARNING_LEVELS = exports.RISK_LEVEL_COLORS = exports.RISK_LEVEL_LABELS = exports.RISK_LEVELS = exports.DISASTER_TYPES = exports.USER_STATUS = exports.USER_ROLES = exports.RESPONSE_MESSAGES = exports.HTTP_STATUS = void 0;
+exports.DEFAULTS = exports.API_VERSIONS = exports.ENVIRONMENTS = exports.ERROR_CODES = exports.REGEX_PATTERNS = exports.TIME_FORMATS = exports.UNITS = exports.GEOMETRY_TYPES = exports.COORDINATE_SYSTEMS = exports.PAGINATION = exports.CACHE_TTL = exports.CACHE_KEYS = exports.TABLE_NAMES = exports.OPERATION_TYPES = exports.LOG_LEVELS = exports.NOTIFICATION_STATUS = exports.NOTIFICATION_TYPES = exports.CONFIG_TYPES = exports.REPORT_PRIORITIES = exports.REPORT_TYPE_LABELS = exports.REPORT_TYPES = exports.SEVERITY_LEVEL_LABELS = exports.SEVERITY_LEVELS = exports.VERIFICATION_STATUS_LABELS = exports.VERIFICATION_STATUSES = exports.REPORT_STATUS = exports.SHELTER_TYPES = exports.SHELTER_STATUS = exports.ROUTE_STATUS = exports.FILE_STATUS = exports.FILE_TYPES = exports.MONITORING_DATA_TYPES = exports.STATION_STATUS = exports.WARNING_STATUS = exports.WARNING_LEVEL_LABELS = exports.WARNING_LEVELS = exports.RISK_LEVEL_COLORS = exports.RISK_LEVEL_LABELS = exports.RISK_LEVELS = exports.DISASTER_TYPES = exports.USER_STATUS = exports.USER_ROLES = exports.RESPONSE_MESSAGES = exports.HTTP_STATUS = void 0;
 exports.HTTP_STATUS = {
     OK: 200,
     CREATED: 201,
@@ -169,12 +169,37 @@ exports.REPORT_STATUS = {
     RESOLVED: 'resolved',
     REJECTED: 'rejected'
 };
+exports.VERIFICATION_STATUSES = {
+    PENDING: 'pending',
+    VERIFIED: 'verified',
+    REJECTED: 'rejected'
+};
+exports.VERIFICATION_STATUS_LABELS = {
+    [exports.VERIFICATION_STATUSES.PENDING]: '待验证',
+    [exports.VERIFICATION_STATUSES.VERIFIED]: '已验证',
+    [exports.VERIFICATION_STATUSES.REJECTED]: '已拒绝'
+};
+exports.SEVERITY_LEVELS = [1, 2, 3, 4, 5];
+exports.SEVERITY_LEVEL_LABELS = {
+    1: '轻微',
+    2: '一般',
+    3: '严重',
+    4: '很严重',
+    5: '极严重'
+};
 exports.REPORT_TYPES = {
     DISASTER: 'disaster',
     INFRASTRUCTURE: 'infrastructure',
     SAFETY: 'safety',
     ENVIRONMENTAL: 'environmental',
     OTHER: 'other'
+};
+exports.REPORT_TYPE_LABELS = {
+    [exports.REPORT_TYPES.DISASTER]: '灾害报告',
+    [exports.REPORT_TYPES.INFRASTRUCTURE]: '基础设施',
+    [exports.REPORT_TYPES.SAFETY]: '安全',
+    [exports.REPORT_TYPES.ENVIRONMENTAL]: '环境',
+    [exports.REPORT_TYPES.OTHER]: '其他'
 };
 exports.REPORT_PRIORITIES = {
     LOW: 'low',

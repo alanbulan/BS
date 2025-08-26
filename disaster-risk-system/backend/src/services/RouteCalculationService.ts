@@ -422,11 +422,23 @@ export class RouteCalculationService {
         throw new Error('路径不存在');
       }
 
-      // 计算当前位置到终点的距离
-      const endPoint: Point = {
-        type: 'Point',
-        coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
-      };
+      // 计算当前位置到终点的距离（优先使用 end_point，若为空则使用 route_geometry 的最后一个点）
+      let endPoint: Point | null = null;
+      if (route.end_point) {
+        endPoint = {
+          type: 'Point',
+          coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
+        };
+      } else if (route.route_geometry?.coordinates?.length) {
+        const last = route.route_geometry.coordinates[route.route_geometry.coordinates.length - 1];
+        endPoint = {
+          type: 'Point',
+          coordinates: [last[0], last[1]]
+        };
+      }
+      if (!endPoint) {
+        throw new Error('路径缺少终点几何信息');
+      }
       const remainingDistance = this.calculateDistance(currentLocation, endPoint);
 
       // 估算剩余时间
@@ -458,10 +470,10 @@ export class RouteCalculationService {
   /**
    * 生成下一步指令
    */
-  private generateNextInstruction(currentLocation: Point, route: any): string {
+  private generateNextInstruction(currentLocation: Point, route: EscapeRoute): string {
     try {
-      // 解析路径点
-      const pathPoints = route.path_points?.coordinates || [];
+      // 解析路径点（来自 route_geometry）
+      const pathPoints = route.route_geometry?.coordinates || [];
       if (pathPoints.length === 0) {
         return '继续前往目的地';
       }
@@ -515,11 +527,23 @@ export class RouteCalculationService {
         return true; // 路径不存在，需要重新规划
       }
 
-      // 检查路径上的风险区域
-      const endPoint: Point = {
-        type: 'Point',
-        coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
-      };
+      // 检查路径上的风险区域（优先使用 end_point，若为空则使用 route_geometry 的最后一个点）
+      let endPoint: Point | null = null;
+      if (route.end_point) {
+        endPoint = {
+          type: 'Point',
+          coordinates: [route.end_point.coordinates[0], route.end_point.coordinates[1]]
+        };
+      } else if (route.route_geometry?.coordinates?.length) {
+        const last = route.route_geometry.coordinates[route.route_geometry.coordinates.length - 1];
+        endPoint = {
+          type: 'Point',
+          coordinates: [last[0], last[1]]
+        };
+      }
+      if (!endPoint) {
+        return true; // 缺少终点几何信息，建议重新规划
+      }
       
       const currentRiskZones = await this.getRiskZonesAlongRoute(currentLocation, endPoint);
       
@@ -530,7 +554,7 @@ export class RouteCalculationService {
       }
 
       // 检查当前位置是否偏离原路径太远
-      const pathPoints = route.path_points?.coordinates || [];
+      const pathPoints = route.route_geometry?.coordinates || [];
       if (pathPoints.length > 0) {
         let minDistanceToPath = Infinity;
         

@@ -588,8 +588,12 @@ export class MonitoringController extends BaseController {
   createStation = async (req: Request, res: Response): Promise<void> => {
     try {
       const stationData = req.body;
-      
-      // 验证必填字段
+
+      // 兼容旧字段：若传入 altitude 且未提供 elevation，则映射为 elevation
+      if (stationData && stationData.altitude !== undefined && stationData.elevation === undefined) {
+        stationData.elevation = stationData.altitude;
+      }
+
       const requiredFields = ['station_id', 'name', 'station_type'];
       const validation = this.validateRequired(stationData, requiredFields);
       if (validation) {
@@ -621,7 +625,11 @@ export class MonitoringController extends BaseController {
         installation_date: stationData.installation_date,
         maintenance_schedule: stationData.maintenance_schedule,
         data_transmission_interval: stationData.data_transmission_interval || 300,
-        is_active: stationData.is_active !== undefined ? stationData.is_active : true
+        is_active: stationData.is_active !== undefined ? stationData.is_active : true,
+        // 新增字段：与表结构对齐
+        elevation: stationData.elevation,
+        installation_status: stationData.installation_status,
+        notes: stationData.notes
       };
 
       const station = await this.stationModel.create(insertData);
@@ -639,7 +647,12 @@ export class MonitoringController extends BaseController {
     try {
       const { id } = req.params;
       const stationData = req.body;
-      
+
+      // 兼容旧字段：若传入 altitude 且未提供 elevation，则映射为 elevation
+      if (stationData && stationData.altitude !== undefined && stationData.elevation === undefined) {
+        stationData.elevation = stationData.altitude;
+      }
+
       if (!id) {
         this.error(res, '监测站ID不能为空', 400);
         return;
@@ -676,7 +689,9 @@ export class MonitoringController extends BaseController {
       const allowedFields = [
         'station_id', 'name', 'station_type', 'location',
         'zone_id', 'equipment_info', 'installation_date',
-        'maintenance_schedule', 'data_transmission_interval', 'is_active'
+        'maintenance_schedule', 'data_transmission_interval', 'is_active',
+        // 允许更新的新增字段
+        'elevation', 'installation_status', 'notes'
       ];
 
       for (const field of allowedFields) {
@@ -715,7 +730,7 @@ export class MonitoringController extends BaseController {
   deleteStation = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      
+
       if (!id) {
         this.error(res, '监测站ID不能为空', 400);
         return;

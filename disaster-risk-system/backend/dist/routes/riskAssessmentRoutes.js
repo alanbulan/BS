@@ -5,6 +5,7 @@ const RiskAssessmentController_1 = require("../controllers/RiskAssessmentControl
 const router = (0, express_1.Router)();
 const riskAssessmentController = new RiskAssessmentController_1.RiskAssessmentController();
 router.get('/', riskAssessmentController.getRiskAssessments);
+router.get('/export', riskAssessmentController.exportRiskAssessments);
 router.get('/:id', riskAssessmentController.getRiskAssessment);
 router.post('/', riskAssessmentController.createRiskAssessment);
 router.put('/:id', riskAssessmentController.updateRiskAssessment);

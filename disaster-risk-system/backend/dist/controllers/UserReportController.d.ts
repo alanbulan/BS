@@ -12,6 +12,7 @@ export declare class UserReportController extends BaseController {
     getReportTypeStats: (req: Request, res: Response) => Promise<void>;
     getRecentEmergencyReports: (req: Request, res: Response) => Promise<void>;
     getReportTypes: (req: Request, res: Response) => Promise<void>;
+    getReportConstants: (_req: Request, res: Response) => Promise<void>;
     deleteUserReport: (req: Request, res: Response) => Promise<void>;
 }
 //# sourceMappingURL=UserReportController.d.ts.map

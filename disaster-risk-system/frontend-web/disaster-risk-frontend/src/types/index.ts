@@ -104,6 +104,8 @@ export interface MonitoringStation {
   location?: string // 位置描述
   location_wkt?: string // WKT格式的位置数据
   altitude?: number
+  elevation?: number // 与监测站表 elevation 字段对齐，优先使用
+  installation_status?: string // 安装/部署状态（如 installed, pending, decommissioned）
   zone_id?: number
   zone_name?: string
   equipment_info?: any
@@ -237,30 +239,21 @@ export interface RoadNetwork {
   id: number
   road_id?: string
   name: string
-  road_type: string
+  road_type?: string
   road_class?: number
-  geometry: any // GeoJSON
+  geometry?: any
   length?: number
   width?: number
   surface_type?: string
   max_speed?: number
-  is_bidirectional?: boolean
-  elevation_profile?: any
-  slope_grade?: number
-  bridge_tunnel_info?: any
   maintenance_status?: string
-  traffic_capacity?: number
-  capacity?: number
-  traffic_flow?: number
-  condition_score?: number
-  last_maintenance?: string
-  disaster_vulnerability?: any
-  status?: 'normal' | 'congested' | 'blocked' | 'damaged'
   is_emergency_route?: boolean
-  description?: string
-  is_active?: boolean
-  created_at?: string
-  updated_at?: string
+  is_bidirectional?: boolean
+  traffic_capacity?: number
+  elevation_profile?: any
+  bridge_tunnel_info?: any
+  created_at?: string | Date
+  updated_at?: string | Date
 }
 
 // 风险评估
@@ -307,21 +300,30 @@ export interface RiskAssessment {
 export interface UserReport {
   id: number
   user_id: number
-  location?: any // GeoJSON Point
+  user?: User  // 新增用户关联信息
+  location?: any
   report_type: string
+  disaster_type?: DisasterType
   disaster_type_id?: number
   title?: string
   description?: string
   severity: number
   images?: any
   videos?: any
-  verification_status: 'pending' | 'verified' | 'rejected'
+  verification_status: string
   verified_by?: number
+  verified_by_user?: {
+    id: number
+    username: string
+    full_name?: string
+    role?: string
+    department?: string
+  } | null  // 新增验证人详细信息
   verified_at?: string
   verification_notes?: string
-  upvotes?: number
-  downvotes?: number
-  is_emergency?: boolean
+  upvotes: number
+  downvotes: number
+  is_emergency: boolean
   response_actions?: any
   created_at: string
   updated_at: string

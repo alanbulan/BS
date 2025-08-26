@@ -14,6 +14,19 @@
           <el-icon style="margin-right: 4px;"><Edit /></el-icon>
           编辑
         </el-button>
+        <!-- 新增：验证操作按钮组 -->
+        <el-button :disabled="isLoading" type="success" @click="openVerifyDialog('verified')" style="margin-left: 8px;">
+          <el-icon style="margin-right: 4px;"><CircleCheck /></el-icon>
+          通过
+        </el-button>
+        <el-button :disabled="isLoading" type="danger" @click="openVerifyDialog('rejected')" style="margin-left: 4px;">
+          <el-icon style="margin-right: 4px;"><Close /></el-icon>
+          拒绝
+        </el-button>
+        <el-button :disabled="isLoading" type="warning" @click="openVerifyDialog('pending')" style="margin-left: 4px;">
+          <el-icon style="margin-right: 4px;"><Refresh /></el-icon>
+          待验证
+        </el-button>
       </div>
     </div>
 
@@ -192,6 +205,38 @@
         <pre class="json-content"><code v-html="highlightedJsonHtml"></code></pre>
       </div>
     </el-dialog>
+
+    <!-- 新增：验证状态更新弹窗 -->
+    <el-dialog
+      v-model="verifyDialogVisible"
+      title="更新验证状态"
+      width="520px"
+      @closed="resetVerifyForm"
+    >
+      <el-form label-width="96px">
+        <el-form-item label="验证状态">
+          <el-radio-group v-model="verifyForm.status">
+            <el-radio label="verified">通过</el-radio>
+            <el-radio label="rejected">拒绝</el-radio>
+            <el-radio label="pending">待验证</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="verifyForm.status === 'rejected' ? '拒绝原因' : '备注'">
+          <el-input
+            v-model="verifyForm.notes"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="请输入备注说明（拒绝时建议填写具体原因，至少5个字）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="verifyDialogVisible = false">取 消</el-button>
+        <el-button type="primary" :loading="verifySubmitting" @click="submitVerify">确 定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -199,10 +244,11 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Edit, View, DocumentCopy, Download } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit, View, DocumentCopy, Download, CircleCheck, Close, Refresh } from '@element-plus/icons-vue'
 import { useEscapeRoutesStore } from '@/stores/escape-routes'
 import EscapeRouteMapComponent from '@/components/EscapeRouteMapComponent.vue'
 import type { EscapeRoute } from '@/types'
+// import type { EscapeRoute } from '@/types' // 已移除未使用的类型，避免 TS 6133 警告
 import { storeToRefs } from 'pinia'
 
 // 路由和store
@@ -218,6 +264,91 @@ const isLoading = ref(false)
 const jsonModalVisible = ref(false)
 const jsonModalTitle = ref('')
 const currentJsonData = ref<any>(null)
+
+// 新增：验证弹窗与表单状态
+/**
+ * 验证状态类型
+ */
+type VerifyStatus = 'verified' | 'rejected' | 'pending'
+
+/**
+ * 验证弹窗可见性
+ */
+const verifyDialogVisible = ref(false)
+
+/**
+ * 验证表单数据
+ */
+const verifyForm = ref<{ status: VerifyStatus; notes: string }>({
+  status: 'verified',
+  notes: ''
+})
+
+/**
+ * 验证提交加载态
+ */
+const verifySubmitting = ref(false)
+
+/**
+ * 打开验证弹窗并预选状态
+ * @param status 预设的验证状态
+ */
+const openVerifyDialog = (status: VerifyStatus) => {
+  verifyForm.value.status = status
+  verifyForm.value.notes = ''
+  verifyDialogVisible.value = true
+}
+
+/**
+ * 重置验证表单
+ */
+const resetVerifyForm = () => {
+  verifyForm.value = { status: 'verified', notes: '' }
+}
+
+/**
+ * 提交验证结果
+ * - 后端接口：PATCH /escape-routes/{id}/verify
+ * - 成功后：更新当前详情的 currentRoute，关闭弹窗
+ */
+const submitVerify = async () => {
+  // 基础校验：拒绝时备注不少于5个字
+  if (verifyForm.value.status === 'rejected') {
+    const n = (verifyForm.value.notes || '').trim()
+    if (n.length < 5) {
+      ElMessage.warning('拒绝时请填写至少 5 个字的备注说明')
+      return
+    }
+  }
+
+  const idParam = route.params.id
+  const id = Number(idParam)
+  if (!id || Number.isNaN(id)) {
+    ElMessage.error('无效的路线ID')
+    return
+  }
+
+  try {
+    verifySubmitting.value = true
+    const updated: EscapeRoute | null = await escapeRoutesStore.verifyRoute(
+      id,
+      verifyForm.value.status,
+      verifyForm.value.notes?.trim() || undefined
+    )
+
+    if (updated) {
+      // 即时更新当前详情
+      currentRoute.value = updated
+      ElMessage.success('验证状态已更新')
+      verifyDialogVisible.value = false
+    }
+  } catch (error) {
+    console.error('提交验证失败:', error)
+    ElMessage.error('提交验证失败')
+  } finally {
+    verifySubmitting.value = false
+  }
+}
 
 /**
  * 格式化坐标点
@@ -595,11 +726,6 @@ onMounted(() => {
 
 .json-boolean {
   color: #e36209;
-  font-weight: bold;
-}
-
-.json-null {
-  color: #6f42c1;
   font-weight: bold;
 }
 </style>

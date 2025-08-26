@@ -6,6 +6,8 @@ const riskAssessmentController = new RiskAssessmentController();
 
 // CRUD操作路由
 router.get('/', riskAssessmentController.getRiskAssessments);
+// 导出需放在 '/:id' 之前，避免被动态路由拦截
+router.get('/export', riskAssessmentController.exportRiskAssessments);
 router.get('/:id', riskAssessmentController.getRiskAssessment);
 router.post('/', riskAssessmentController.createRiskAssessment);
 router.put('/:id', riskAssessmentController.updateRiskAssessment);
