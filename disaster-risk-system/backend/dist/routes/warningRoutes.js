@@ -1,0 +1,23 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const WarningController_1 = require("../controllers/WarningController");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+const warningController = new WarningController_1.WarningController();
+router.get('/active', warningController.getActiveWarnings);
+router.get('/evacuation', warningController.getEvacuationWarnings);
+router.get('/location', warningController.getWarningsByLocation);
+router.get('/level', warningController.getWarningsByLevel);
+router.get('/zone/:zone_id', warningController.getWarningsByZone);
+router.get('/disaster-type/:disaster_type_id', warningController.getWarningsByDisasterType);
+router.get('/', auth_1.verifyToken, warningController.getWarnings);
+router.get('/stats', auth_1.verifyToken, warningController.getWarningStats);
+router.get('/:id', auth_1.verifyToken, warningController.getWarningById);
+router.post('/', auth_1.verifyToken, auth_1.requireExpertOrAdmin, warningController.createWarning);
+router.put('/:id', auth_1.verifyToken, auth_1.requireExpertOrAdmin, warningController.updateWarning);
+router.patch('/:id/cancel', auth_1.verifyToken, auth_1.requireExpertOrAdmin, warningController.cancelWarning);
+router.post('/auto-assess', auth_1.verifyToken, auth_1.requireAdmin, warningController.autoAssessAndWarn);
+router.post('/process-expired', auth_1.verifyToken, auth_1.requireAdmin, warningController.processExpiredWarnings);
+exports.default = router;
+//# sourceMappingURL=warningRoutes.js.map

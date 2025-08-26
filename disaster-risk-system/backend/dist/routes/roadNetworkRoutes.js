@@ -1,0 +1,27 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const RoadNetworkController_1 = require("../controllers/RoadNetworkController");
+const auth_1 = require("../middleware/auth");
+const authorize_1 = require("../middleware/authorize");
+const router = (0, express_1.Router)();
+const roadNetworkController = new RoadNetworkController_1.RoadNetworkController();
+router.get('/in-area', roadNetworkController.getRoadsInArea);
+router.get('/emergency', roadNetworkController.getEmergencyRoutes);
+router.get('/near-point', roadNetworkController.getRoadsNearPoint);
+router.get('/connectivity/analysis', roadNetworkController.getConnectivityAnalysis);
+router.use(auth_1.verifyToken);
+router.get('/', roadNetworkController.getRoads);
+router.get('/:id', roadNetworkController.getRoadById);
+router.get('/road/:roadId', roadNetworkController.getRoadByRoadId);
+router.get('/stats/overview', roadNetworkController.getStatistics);
+router.get('/quality/report', roadNetworkController.getQualityReport);
+router.use((0, authorize_1.authorize)(['admin', 'emergency_manager']));
+router.post('/', roadNetworkController.createRoad);
+router.put('/:id', roadNetworkController.updateRoad);
+router.patch('/:id/condition', roadNetworkController.updateConditionScore);
+router.patch('/:id/emergency', roadNetworkController.setEmergencyRoute);
+router.delete('/:id', roadNetworkController.deleteRoad);
+router.post('/batch/import', roadNetworkController.batchImport);
+exports.default = router;
+//# sourceMappingURL=roadNetworkRoutes.js.map

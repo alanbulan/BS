@@ -1,0 +1,25 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const EscapeRouteController_1 = require("../controllers/EscapeRouteController");
+const auth_1 = require("../middleware/auth");
+const authorize_1 = require("../middleware/authorize");
+const router = (0, express_1.Router)();
+const escapeRouteController = new EscapeRouteController_1.EscapeRouteController();
+router.get('/recommendations', escapeRouteController.getRecommendations);
+router.get('/from-point', escapeRouteController.getRoutesFromPoint);
+router.get('/to-shelter', escapeRouteController.getRoutesToShelter);
+router.get('/in-area', escapeRouteController.getRoutesInArea);
+router.use(auth_1.verifyToken);
+router.get('/', escapeRouteController.getRoutes);
+router.get('/:id', escapeRouteController.getRouteById);
+router.get('/route/:routeId', escapeRouteController.getRouteByRouteId);
+router.get('/stats/overview', escapeRouteController.getStatistics);
+router.use((0, authorize_1.authorize)(['admin', 'emergency_manager']));
+router.post('/', escapeRouteController.createRoute);
+router.put('/:id', escapeRouteController.updateRoute);
+router.patch('/:id/verify', escapeRouteController.verifyRoute);
+router.delete('/:id', escapeRouteController.deleteRoute);
+router.post('/batch/import', escapeRouteController.batchImport);
+exports.default = router;
+//# sourceMappingURL=escapeRouteRoutes.js.map

@@ -1,0 +1,19 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const RiskAssessmentController_1 = require("../controllers/RiskAssessmentController");
+const router = (0, express_1.Router)();
+const riskAssessmentController = new RiskAssessmentController_1.RiskAssessmentController();
+router.get('/', riskAssessmentController.getRiskAssessments);
+router.get('/:id', riskAssessmentController.getRiskAssessment);
+router.post('/', riskAssessmentController.createRiskAssessment);
+router.put('/:id', riskAssessmentController.updateRiskAssessment);
+router.delete('/:id', riskAssessmentController.deleteRiskAssessment);
+router.post('/assess/zone/:zoneId', riskAssessmentController.assessZoneRisk);
+router.post('/assess/batch', riskAssessmentController.batchAssessRisk);
+router.post('/assess/location', riskAssessmentController.assessLocationRisk);
+router.get('/zone/:zoneId/history', riskAssessmentController.getHistoricalAssessments);
+router.get('/high-risk-zones', riskAssessmentController.getHighRiskZones);
+router.get('/stats', riskAssessmentController.getRiskAssessmentStats);
+exports.default = router;
+//# sourceMappingURL=riskAssessmentRoutes.js.map

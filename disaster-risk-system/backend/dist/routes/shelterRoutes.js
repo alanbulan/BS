@@ -1,0 +1,21 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const ShelterController_1 = require("../controllers/ShelterController");
+const router = (0, express_1.Router)();
+const shelterController = new ShelterController_1.ShelterController();
+router.get('/', shelterController.getShelters);
+router.get('/nearest', shelterController.getNearestShelters);
+router.get('/statistics', shelterController.getShelterStatistics);
+router.get('/types', shelterController.getShelterTypes);
+router.get('/export', shelterController.exportShelters);
+router.patch('/batch-status', shelterController.batchUpdateStatus);
+router.delete('/batch', shelterController.batchDelete);
+router.get('/:id', shelterController.getShelterById);
+router.get('/:id/capacity-history', shelterController.getCapacityHistory);
+router.post('/', shelterController.createShelter);
+router.put('/:id', shelterController.updateShelter);
+router.patch('/:id/occupancy', shelterController.updateOccupancy);
+router.delete('/:id', shelterController.deleteShelter);
+exports.default = router;
+//# sourceMappingURL=shelterRoutes.js.map
