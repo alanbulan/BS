@@ -4,6 +4,11 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { testConnection } from './config/database';
 import routes from './routes';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// 在使用环境变量前加载 .env
+dotenv.config();
 
 const app = express();
 
@@ -12,7 +17,7 @@ app.use(helmet());
 
 // CORS配置
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:8081'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma']
@@ -22,6 +27,15 @@ app.use(cors({
 // 请求体解析
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 暴露上传目录为静态资源（添加CORS支持）
+const uploadPath = process.env.UPLOAD_PATH || './uploads';
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.resolve(uploadPath)));
 
 // 压缩响应 - 暂时注释掉，可以后续添加
 // 如需启用压缩，请先安装: npm install compression @types/compression

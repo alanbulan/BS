@@ -25,6 +25,9 @@ router.use(verifyToken);
 // 获取道路网络列表
 router.get('/', roadNetworkController.getRoads);
 
+// 导出道路数据（需在/:id之前）
+router.get('/export', roadNetworkController.exportRoads);
+
 // 根据ID获取道路网络记录
 router.get('/:id', roadNetworkController.getRoadById);
 

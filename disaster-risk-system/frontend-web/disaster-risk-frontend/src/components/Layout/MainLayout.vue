@@ -18,7 +18,10 @@
       <div class="header-right">
         <el-dropdown @command="handleUserCommand">
           <span class="user-info">
-            <el-avatar :size="32" :src="authStore.user?.avatar_url">
+            <el-avatar 
+              :size="32" 
+              :src="authStore.user?.avatar_url ? `http://localhost:3000${authStore.user.avatar_url}` : undefined"
+            >
               <el-icon><User /></el-icon>
             </el-avatar>
             <span class="username">{{ authStore.user?.username || '用户' }}</span>

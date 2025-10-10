@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { BaseController } from './BaseController'
 import { UserReportModel } from '../models/UserReportModel'
+import { DisasterTypeModel } from '../models/DisasterTypeModel'
 import { Point, UserReport, LocationQuery } from '../types'
 import { 
   REPORT_TYPES,
@@ -10,13 +11,16 @@ import {
   SEVERITY_LEVELS,
   SEVERITY_LEVEL_LABELS
 } from '../utils'
+import { getFileInfo } from '../middleware/upload'
 
 export class UserReportController extends BaseController {
   private userReportModel: UserReportModel
+  private disasterTypeModel: DisasterTypeModel
 
   constructor() {
     super()
     this.userReportModel = new UserReportModel()
+    this.disasterTypeModel = new DisasterTypeModel()
   }
 
   /**
@@ -67,6 +71,40 @@ export class UserReportController extends BaseController {
   };
 
   /**
+   * 获取“我的报告”列表（当前登录用户）
+   */
+  getMyReports = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        this.error(res, '需要登录', 401)
+        return
+      }
+      const { page, limit, offset } = this.getPaginationParams(req)
+      const { sortBy, sortOrder } = this.getSortParams(req)
+      const { report_type, disaster_type_id, verification_status, min_severity, max_severity, is_emergency, start_date, end_date, search } = req.query
+      const conditions: any = { user_id: req.user.id }
+      if (report_type) conditions.report_type = report_type
+      if (disaster_type_id) conditions.disaster_type_id = parseInt(disaster_type_id as string)
+      if (verification_status) conditions.verification_status = verification_status
+      if (min_severity) conditions.min_severity = parseInt(min_severity as string)
+      if (max_severity) conditions.max_severity = parseInt(max_severity as string)
+      if (is_emergency !== undefined) conditions.is_emergency = is_emergency === 'true'
+      if (start_date) conditions.start_date = new Date(start_date as string)
+      if (end_date) conditions.end_date = new Date(end_date as string)
+      if (search) conditions.search = search as string
+      const result = await this.userReportModel.findWithPagination({
+        conditions,
+        pagination: { page, limit, offset },
+        sort: { field: sortBy, order: sortOrder as 'ASC' | 'DESC' }
+      })
+      this.paginated(res, result.data, result.pagination)
+    } catch (error) {
+      console.error('获取我的报告失败:', error)
+      this.error(res, '获取我的报告失败: ' + (error as Error).message, 500)
+    }
+  }
+
+  /**
    * 获取用户报告详情
    */
   getUserReportById = async (req: Request, res: Response): Promise<void> => {
@@ -93,56 +131,105 @@ export class UserReportController extends BaseController {
 
   /**
    * 创建用户报告
+   * - 绑定 req.user.id 为 user_id
+   * - 支持 multipart/form-data，接收 images[]/videos[] 文件
+   * - 兼容无文件的纯 JSON 提交
    */
   createUserReport = async (req: Request, res: Response): Promise<void> => {
     try {
-      const requiredFields = ['user_id', 'report_type'];
-      const validation = this.validateRequired(req.body, requiredFields);
+      if (!req.user?.id) {
+        this.error(res, '需要登录', 401)
+        return
+      }
+      const validation = this.validateRequired(req.body, ['report_type'])
       if (validation) {
-        this.error(res, validation, 400);
-        return;
+        this.error(res, validation, 400)
+        return
       }
-
-      const {
-        user_id,
-        location,
-        report_type,
-        disaster_type_id,
-        title,
-        description,
-        severity = 3,
-        images,
-        videos,
-        is_emergency = false
-      } = req.body;
-
-      // 验证严重程度
-      if (severity < 1 || severity > 5) {
-        this.error(res, '严重程度必须在1-5之间', 400);
-        return;
+      const allowedReportTypes = Object.values(REPORT_TYPES) as string[]
+      const bodyReportType = String((req.body as any).report_type || '').trim()
+      if (!allowedReportTypes.includes(bodyReportType)) {
+        this.error(res, 'report_type 无效', 400)
+        return
       }
-
+      const parseLocation = (): Point | undefined => {
+        const raw = (req.body as any).location
+        if (raw) {
+          try {
+            const loc = typeof raw === 'string' ? JSON.parse(raw) : raw
+            if (loc && loc.type === 'Point' && Array.isArray(loc.coordinates) && loc.coordinates.length === 2) {
+              const lon = parseFloat(loc.coordinates[0])
+              const lat = parseFloat(loc.coordinates[1])
+              if (!isNaN(lon) && !isNaN(lat)) return { type: 'Point', coordinates: [lon, lat] }
+            }
+          } catch {}
+        }
+        const lonKeys = ['longitude', 'lon', 'lng']
+        const latKeys = ['latitude', 'lat']
+        let lonStr: string | undefined
+        let latStr: string | undefined
+        for (const k of lonKeys) if ((req.body as any)[k] !== undefined) { lonStr = (req.body as any)[k]; break }
+        for (const k of latKeys) if ((req.body as any)[k] !== undefined) { latStr = (req.body as any)[k]; break }
+        if (lonStr !== undefined && latStr !== undefined) {
+          const lon = parseFloat(String(lonStr))
+          const lat = parseFloat(String(latStr))
+          if (!isNaN(lon) && !isNaN(lat)) return { type: 'Point', coordinates: [lon, lat] }
+        }
+        return undefined
+      }
+      const location = parseLocation()
+      const files = req.files as undefined | Record<string, Express.Multer.File[]>
+      const uploadedImageUrls = files?.images?.map(f => getFileInfo(f).url) ?? []
+      const uploadedVideoUrls = files?.videos?.map(f => getFileInfo(f).url) ?? []
+      const parseArray = (val: any): string[] => {
+        if (!val) return []
+        if (Array.isArray(val)) return val.map(String)
+        if (typeof val === 'string') {
+          try {
+            const parsed = JSON.parse(val)
+            if (Array.isArray(parsed)) return parsed.map(String)
+          } catch {}
+          return val.split(',').map((s: string) => s.trim()).filter(Boolean)
+        }
+        return []
+      }
+      const bodyImageUrls = parseArray((req.body as any).images)
+      const bodyVideoUrls = parseArray((req.body as any).videos)
+      const images = [...bodyImageUrls, ...uploadedImageUrls]
+      const videos = [...bodyVideoUrls, ...uploadedVideoUrls]
+      const severityRaw = (req.body as any).severity ?? 3
+      const severity = parseInt(String(severityRaw), 10)
+      if (isNaN(severity) || severity < 1 || severity > 5) {
+        this.error(res, '严重程度必须在1-5之间', 400)
+        return
+      }
+      const is_emergency = String((req.body as any).is_emergency ?? 'false').toLowerCase() === 'true'
+      const disaster_type_id = (req.body as any).disaster_type_id ? parseInt(String((req.body as any).disaster_type_id), 10) : undefined
+      if (disaster_type_id !== undefined) {
+        const type = await this.disasterTypeModel.findById(disaster_type_id)
+        if (!type) {
+          this.error(res, '灾害类型不存在', 400)
+          return
+        }
+      }
       const reportData = {
-        user_id,
+        user_id: req.user.id,
         location,
-        report_type,
+        report_type: bodyReportType,
         disaster_type_id,
-        title,
-        description,
+        title: (req.body as any).title,
+        description: (req.body as any).description,
         severity,
-        images,
-        videos,
+        images: images.length ? images : undefined,
+        videos: videos.length ? videos : undefined,
         verification_status: 'pending',
-        is_emergency,
-        upvotes: 0,
-        downvotes: 0
-      } as Omit<UserReport, 'id' | 'created_at' | 'updated_at'>;
-
-      const result = await this.userReportModel.create(reportData);
-      this.created(res, result, '创建用户报告成功');
+        is_emergency
+      } as Omit<UserReport, 'id' | 'created_at' | 'updated_at'>
+      const result = await this.userReportModel.create(reportData)
+      this.created(res, result, '创建用户报告成功')
     } catch (error) {
-      console.error('创建用户报告失败:', error);
-      this.error(res, '创建用户报告失败: ' + (error as Error).message, 500);
+      console.error('创建用户报告失败:', error)
+      this.error(res, '创建用户报告失败: ' + (error as Error).message, 500)
     }
   };
 

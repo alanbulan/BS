@@ -15,7 +15,9 @@ router.get('/disaster-type/:disaster_type_id', warningController.getWarningsByDi
 
 // 需要登录的路由
 router.get('/', verifyToken, warningController.getWarnings);                  // 获取预警列表
+router.get('/export', verifyToken, warningController.exportWarnings);         // 导出预警（需在/:id之前）
 router.get('/stats', verifyToken, warningController.getWarningStats);         // 获取预警统计
+router.get('/:id/history', verifyToken, warningController.getWarningHistory); // 获取预警历史记录
 router.get('/:id', verifyToken, warningController.getWarningById);            // 获取预警详情
 
 // 需要专家或管理员权限的路由

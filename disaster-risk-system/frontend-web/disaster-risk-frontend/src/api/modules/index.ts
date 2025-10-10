@@ -7,6 +7,7 @@ export { routesApi } from './routes';
 export { schedulerApi } from './scheduler';
 export { sheltersApi } from './shelters';
 export { usersApi } from './users';
+export { weatherApi } from './weather';
 export { userReportsApi } from './user-reports';
 export { warningsApi } from './warnings';
 export { systemConfigApi } from './system-config';

@@ -28,6 +28,8 @@ export const escapeRoutesApi = {
   },
 
   // 批量删除逃生路线
+  // 注意：后端暂未实现批量删除路由，需要后端添加 DELETE /escape-routes/batch
+  // 目前该功能仅在store中定义但未在页面中使用
   deleteEscapeRoutes: (ids: number[]): Promise<ApiResponse<null>> => {
     return request.delete('/escape-routes/batch', { data: { ids } })
   },

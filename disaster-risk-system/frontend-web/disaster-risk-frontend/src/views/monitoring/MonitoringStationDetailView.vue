@@ -3,12 +3,14 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
-        <el-button @click="goBack" type="text" class="back-btn">
+        <el-button @click="goBack" class="back-btn">
           <el-icon><ArrowLeft /></el-icon>
-          返回
+          <span>返回列表</span>
         </el-button>
-        <h2>{{ station?.name || '监测站详情' }}</h2>
-        <p>{{ station?.station_id }}</p>
+        <div class="header-title">
+          <h2>{{ station?.name || '监测站详情' }}</h2>
+          <p>{{ station?.station_id }}</p>
+        </div>
       </div>
       <div class="header-right">
         <el-button type="primary" @click="editStation">
@@ -401,10 +403,14 @@ const loadStationTypes = async () => {
 const initChart = async () => {
   await nextTick()
   if (chartContainer.value) {
-    chartInstance.value = markRaw(echarts.init(chartContainer.value))
-    updateChart()
-    // 监听窗口大小变化
-    window.addEventListener('resize', handleResize)
+    try {
+      chartInstance.value = markRaw(echarts.init(chartContainer.value))
+      updateChart()
+      // 监听窗口大小变化
+      window.addEventListener('resize', handleResize)
+    } catch (error) {
+      console.error('图表初始化失败:', error)
+    }
   }
 }
 
@@ -422,29 +428,20 @@ const updateChart = () => {
         text: '暂无监测数据',
         left: 'center',
         top: 'middle',
-        textStyle: {
-          color: '#999',
-          fontSize: 16
-        }
+        color: '#999',
+        fontSize: 16
       },
-      grid: {
-        show: false
-      },
-      xAxis: {
-        show: false
-      },
-      yAxis: {
-        show: false
-      },
+      grid: { show: false },
+      xAxis: { show: false },
+      yAxis: { show: false },
       series: []
     }
-    try {
-      chartInstance.value.setOption(option, true)
-    } catch (e) {
-      if (chartContainer.value) {
-        chartInstance.value?.dispose()
-        chartInstance.value = markRaw(echarts.init(chartContainer.value))
+    
+    if (chartInstance.value) {
+      try {
         chartInstance.value.setOption(option, true)
+      } catch (error) {
+        console.error('设置空数据图表失败:', error)
       }
     }
     return
@@ -494,10 +491,8 @@ const updateChart = () => {
     title: {
       text: `${station.value?.name || ''} - 监测数据趋势`,
       left: 'center',
-      textStyle: {
-        fontSize: 16,
-        fontWeight: 'bold'
-      }
+      fontSize: 16,
+      fontWeight: 'bold'
     },
     tooltip: {
       trigger: 'axis',
@@ -598,13 +593,22 @@ const updateChart = () => {
   }
 
   try {
-    chartInstance.value.setOption(option, true)
-  } catch (e) {
-    // 若发生坐标系/组件未找到等异常，尝试重建实例兜底
-    if (chartContainer.value) {
-      chartInstance.value?.dispose()
-      chartInstance.value = markRaw(echarts.init(chartContainer.value))
+    if (chartInstance.value) {
       chartInstance.value.setOption(option, true)
+    }
+  } catch (error) {
+    console.error('图表更新失败:', error)
+    // 若出错，尝试重新初始化
+    if (chartContainer.value) {
+      try {
+        if (chartInstance.value && !chartInstance.value.isDisposed()) {
+          chartInstance.value.dispose()
+        }
+        chartInstance.value = markRaw(echarts.init(chartContainer.value))
+        chartInstance.value.setOption(option, true)
+      } catch (retryError) {
+        console.error('图表重建失败:', retryError)
+      }
     }
   }
 }
@@ -730,13 +734,22 @@ const refreshData = async () => {
 
 // 返回上一页
 const goBack = () => {
-  router.back()
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/monitoring')
+  }
 }
 
 // 编辑站点
 const editStation = () => {
-  // 跳转到编辑页面或打开编辑对话框
-  ElMessage.info('编辑功能待实现')
+  // 跳转回监测管理页面并触发编辑
+  if (station.value) {
+    router.push({
+      path: '/monitoring',
+      query: { editId: station.value.id }
+    })
+  }
 }
 
 // 导出数据
@@ -851,7 +864,7 @@ onUnmounted(() => {
   if (realtimeTimer.value) {
     clearInterval(realtimeTimer.value)
   }
-  if (chartInstance.value) {
+  if (chartInstance.value && !chartInstance.value.isDisposed()) {
     chartInstance.value.dispose()
   }
   window.removeEventListener('resize', handleResize)
@@ -878,18 +891,17 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.back-btn {
-  padding: 0;
-  margin-right: 10px;
+.header-title {
+  margin-left: 16px;
 }
 
-.header-left h2 {
+.header-title h2 {
   margin: 0;
   font-size: 24px;
   color: #303133;
 }
 
-.header-left p {
+.header-title p {
   margin: 0;
   color: #909399;
   font-size: 14px;

@@ -4,6 +4,7 @@
     <div class="page-header">
       <div class="header-left">
         <h2>系统概览</h2>
+        <p>实时监控系统运行状态和关键指标</p>
       </div>
       <div class="header-right">
         <el-button @click="refreshData">
@@ -81,6 +82,34 @@
         
         <!-- 右侧信息面板 -->
         <el-col :span="6">
+          <!-- 天气信息 -->
+          <div class="weather-card" v-if="weatherData">
+            <div class="card-header">
+              <span>当前天气</span>
+              <el-button type="text" size="small" @click="refreshWeather">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+            </div>
+            <div class="weather-content">
+              <div class="weather-info-item">
+                <label>温度</label>
+                <span class="value">{{ weatherData.temperature?.toFixed(1) }}°C</span>
+              </div>
+              <div class="weather-info-item">
+                <label>天气</label>
+                <span>{{ weatherData.conditions }}</span>
+              </div>
+              <div class="weather-info-item">
+                <label>湿度</label>
+                <span>{{ weatherData.humidity?.toFixed(1) }}%</span>
+              </div>
+              <div class="weather-info-item">
+                <label>风速</label>
+                <span>{{ weatherData.windSpeed?.toFixed(1) }} m/s</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 系统状态 -->
           <div class="status-card">
             <div class="card-header">
@@ -106,6 +135,14 @@
                 <span>数据同步</span>
                 <el-tag :type="getStatusType(systemStatus.dataSync.status)" size="small">
                   {{ getStatusText(systemStatus.dataSync.status) }}
+                </el-tag>
+              </div>
+              <!-- 维护预警 -->
+              <div v-if="maintenanceWarning" class="status-item warning">
+                <div class="status-indicator warning"></div>
+                <span>设备维护</span>
+                <el-tag type="warning" size="small">
+                  {{ stationStats?.overdue_maintenance || 0 }}站待维护
                 </el-tag>
               </div>
             </div>
@@ -139,6 +176,84 @@
               </div>
             </div>
           </div>
+
+          <!-- 紧急报告 -->
+          <div v-if="recentEmergencyReports.length > 0" class="emergency-reports-card">
+            <div class="card-header">
+              <span>紧急报告</span>
+              <el-button type="text" size="small" @click="$router.push('/user-reports')">查看全部</el-button>
+            </div>
+            <div class="reports-list">
+              <div 
+                v-for="report in recentEmergencyReports.slice(0, 3)" 
+                :key="report.id" 
+                class="report-item"
+                @click="$router.push(`/user-reports/${report.id}`)"
+              >
+                <el-tag type="danger" size="small">紧急</el-tag>
+                <div class="report-content">
+                  <div class="report-title">{{ report.title || '用户报告' }}</div>
+                  <div class="report-time">{{ formatTime(report.created_at) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+
+      <!-- 数据可视化图表区域 -->
+      <el-row :gutter="16" style="margin-top: 16px;">
+        <!-- 风险等级分布 -->
+        <el-col :span="8">
+          <el-card class="chart-card">
+            <template #header>
+              <span>风险等级分布</span>
+            </template>
+            <div ref="riskLevelChartRef" style="height: 300px;"></div>
+          </el-card>
+        </el-col>
+        
+        <!-- 系统数据概览 -->
+        <el-col :span="8">
+          <el-card class="chart-card">
+            <template #header>
+              <span>系统数据概览</span>
+            </template>
+            <div ref="statsChartRef" style="height: 300px;"></div>
+          </el-card>
+        </el-col>
+
+        <!-- 监测站类型分布 -->
+        <el-col :span="8">
+          <el-card class="chart-card">
+            <template #header>
+              <span>监测站类型分布</span>
+            </template>
+            <div ref="stationTypeChartRef" style="height: 300px;"></div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- 第二行图表 -->
+      <el-row :gutter="16" style="margin-top: 16px;">
+        <!-- 用户报告类型统计 -->
+        <el-col :span="12">
+          <el-card class="chart-card">
+            <template #header>
+              <span>用户报告类型统计</span>
+            </template>
+            <div ref="reportTypeChartRef" style="height: 300px;"></div>
+          </el-card>
+        </el-col>
+
+        <!-- 预警趋势 -->
+        <el-col :span="12">
+          <el-card class="chart-card">
+            <template #header>
+              <span>灾害类型分布</span>
+            </template>
+            <div ref="disasterTypeChartRef" style="height: 300px;"></div>
+          </el-card>
         </el-col>
       </el-row>
     </div>
@@ -146,18 +261,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { 
   Refresh, Monitor, Warning, MapLocation, House 
 } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
+import type { ECharts } from 'echarts'
 import MapComponent from '@/components/MapComponent.vue'
 import { dashboardApi } from '@/api/modules/dashboard'
 import type { DashboardStats, RiskLevelStats, SystemStatus, RecentWarning } from '@/api/modules/dashboard'
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import { userReportsApi } from '@/api/modules/user-reports'
+import { monitoringStationsApi, monitoringStationsApiExtended } from '@/api/modules/monitoring'
+import { weatherApi } from '@/api/modules/weather'
+import type { CurrentWeather } from '@/api/modules/weather'
+import { disasterTypesApi } from '@/api/modules/disaster-types'
 
 // 路由
 const router = useRouter()
+const { handleApiError } = useErrorHandler()
 
 // 响应式数据
 const currentTime = ref('')
@@ -204,10 +328,32 @@ const systemStatus = ref<SystemStatus>({
   }
 })
 const recentWarnings = ref<RecentWarning[]>([])
+const recentEmergencyReports = ref<any[]>([])
+const stationStats = ref<any>(null)
+const maintenanceWarning = ref(false)
+const weatherData = ref<CurrentWeather | null>(null)
 
-// 定时器
-let timeInterval: number | null = null
-let dataInterval: number | null = null
+// 图表ref
+const riskLevelChartRef = ref<HTMLDivElement>()
+const statsChartRef = ref<HTMLDivElement>()
+const stationTypeChartRef = ref<HTMLDivElement>()
+const reportTypeChartRef = ref<HTMLDivElement>()
+const disasterTypeChartRef = ref<HTMLDivElement>()
+
+let riskLevelChart: ECharts | null = null
+let statsChart: ECharts | null = null
+let stationTypeChart: ECharts | null = null
+let reportTypeChart: ECharts | null = null
+let disasterTypeChart: ECharts | null = null
+
+// 图表数据
+const stationTypeStats = ref<any[]>([])
+const reportTypeStats = ref<any[]>([])
+const disasterTypeStats = ref<any[]>([])
+
+// 定时器（使用正确的类型）
+let timeInterval: ReturnType<typeof setInterval> | null = null
+let dataInterval: ReturnType<typeof setInterval> | null = null
 
 // 更新当前时间
 const updateCurrentTime = () => {
@@ -227,12 +373,21 @@ const refreshData = async () => {
   try {
     loading.value = true
     
-    // 并行获取所有数据
-    const [statsRes, riskLevelsRes, warningsRes, statusRes] = await Promise.all([
+    // 并行获取所有数据（包含新增的统计API）
+    const [
+      statsRes, 
+      riskLevelsRes, 
+      warningsRes, 
+      statusRes,
+      emergencyReportsRes,
+      stationStatsRes
+    ] = await Promise.all([
       dashboardApi.getStats(),
       dashboardApi.getRiskLevelStats(),
       dashboardApi.getRecentWarnings(5),
-      dashboardApi.getSystemStatus()
+      dashboardApi.getSystemStatus(),
+      userReportsApi.getRecentEmergencyReports({ hours: 24, limit: 5 }).catch(() => ({ success: false, data: [] })),
+      monitoringStationsApiExtended.getStationStatistics().catch(() => ({ success: false, data: null }))
     ])
     
     if (statsRes.success) {
@@ -251,10 +406,23 @@ const refreshData = async () => {
       systemStatus.value = statusRes.data
     }
     
+    // 使用新的统计数据（如果可用）
+    if (emergencyReportsRes.success && emergencyReportsRes.data) {
+      recentEmergencyReports.value = emergencyReportsRes.data
+    }
+    
+    if (stationStatsRes.success && stationStatsRes.data) {
+      stationStats.value = stationStatsRes.data
+      // 检查是否有维护预警
+      maintenanceWarning.value = (stationStatsRes.data.overdue_maintenance || 0) > 0
+    }
+    
+    // 获取额外统计数据用于图表
+    await fetchChartStats()
+    
     ElMessage.success('数据刷新成功')
   } catch (error) {
-    console.error('获取仪表板数据失败:', error)
-    ElMessage.error('获取仪表板数据失败')
+    handleApiError(error, '获取仪表板数据失败')
     
     // 当后端服务不可用时，设置系统状态为错误
     systemStatus.value = {
@@ -285,9 +453,6 @@ const refreshData = async () => {
     loading.value = false
   }
 }
-
-// 获取仪表板数据
-const fetchDashboardData = refreshData
 
 
 
@@ -354,17 +519,449 @@ const viewWarningDetail = (id: number) => {
   router.push(`/warnings/${id}`)
 }
 
+// 获取天气数据
+const fetchWeatherData = async () => {
+  try {
+    // 使用默认位置（可以从系统配置或用户设置获取）
+    // 这里使用示例坐标，实际应该从配置中读取
+    const response = await weatherApi.getCurrentWeather({
+      latitude: 39.9042,  // 北京示例坐标
+      longitude: 116.4074
+    })
+    
+    if (response.success && response.data) {
+      weatherData.value = response.data
+    }
+  } catch (error) {
+    console.error('获取天气数据失败:', error)
+    // 静默失败，不影响主要功能
+  }
+}
+
+// 刷新天气数据
+const refreshWeather = () => {
+  fetchWeatherData()
+  ElMessage.success('天气数据已刷新')
+}
+
+// 获取图表统计数据
+// 监测站类型中英文映射
+const stationTypeMap: Record<string, string> = {
+  'rainfall': '雨量站',
+  'slope': '坡面监测站',
+  'groundwater': '地下水监测站',
+  'seismic': '地震监测站',
+  'water_level': '水位监测站',
+  'weather': '气象站',
+  'wind': '风力监测站',
+  'soil_moisture': '土壤湿度监测站'
+}
+
+// 报告类型中英文映射
+const reportTypeMap: Record<string, string> = {
+  'public_report': '公众报告',
+  'field_witness': '现场目击',
+  'equipment_alarm': '设备告警',
+  'infrastructure': '基础设施'
+}
+
+const fetchChartStats = async () => {
+  try {
+    // 获取监测站列表并统计类型
+    const stationsRes = await monitoringStationsApi.getStations({ page: 1, limit: 1000 }).catch(() => ({ success: false, data: [] }))
+    
+    if (stationsRes.success && stationsRes.data && Array.isArray(stationsRes.data)) {
+      // 统计监测站类型
+      const typeMap = new Map<string, number>()
+      stationsRes.data.forEach((station: any) => {
+        const typeName = station.station_type || station.type_name || '未知'
+        const displayName = stationTypeMap[typeName] || typeName
+        typeMap.set(displayName, (typeMap.get(displayName) || 0) + 1)
+      })
+      
+      stationTypeStats.value = Array.from(typeMap.entries()).map(([name, count]) => ({
+        type_name: name,
+        name: name,
+        count: count
+      }))
+    }
+    
+    // 获取报告类型统计
+    const reportTypeRes = await userReportsApi.getReportTypeStats().catch(() => ({ success: false, data: [] }))
+    if (reportTypeRes.success && reportTypeRes.data) {
+      reportTypeStats.value = reportTypeRes.data.map((item: any) => ({
+        ...item,
+        report_type: reportTypeMap[item.report_type] || item.report_type
+      }))
+    }
+    
+    // 获取灾害类型
+    const disasterTypeRes = await disasterTypesApi.getDisasterTypes({ page: 1, limit: 100 }).catch(() => ({ success: false, data: [] }))
+    if (disasterTypeRes.success && disasterTypeRes.data) {
+      disasterTypeStats.value = Array.isArray(disasterTypeRes.data) ? disasterTypeRes.data : []
+    }
+  } catch (error) {
+    console.error('获取图表统计数据失败:', error)
+    // 静默失败，不影响主要功能
+  }
+}
+
+// 初始化风险等级分布图表
+const initRiskLevelChart = () => {
+  if (!riskLevelChartRef.value) return
+  
+  riskLevelChart = echarts.init(riskLevelChartRef.value)
+  updateRiskLevelChart()
+}
+
+// 更新风险等级分布图表
+const updateRiskLevelChart = () => {
+  if (!riskLevelChart) return
+  
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      formatter: '{a} <br/>{b}: {c} ({d}%)'
+    },
+    legend: {
+      bottom: '5%',
+      left: 'center'
+    },
+    series: [
+      {
+        name: '风险等级',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 10,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        label: {
+          show: false,
+          position: 'center'
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 20,
+            fontWeight: 'bold'
+          }
+        },
+        labelLine: {
+          show: false
+        },
+        data: [
+          { value: riskLevelStats.value.level1, name: '低风险', itemStyle: { color: '#67c23a' } },
+          { value: riskLevelStats.value.level2, name: '较低风险', itemStyle: { color: '#409eff' } },
+          { value: riskLevelStats.value.level3, name: '中等风险', itemStyle: { color: '#e6a23c' } },
+          { value: riskLevelStats.value.level4, name: '较高风险', itemStyle: { color: '#f56c6c' } },
+          { value: riskLevelStats.value.level5, name: '高风险', itemStyle: { color: '#c0392b' } }
+        ]
+      }
+    ]
+  }
+  
+  riskLevelChart.setOption(option)
+}
+
+// 初始化系统统计图表
+const initStatsChart = () => {
+  if (!statsChartRef.value) return
+  
+  statsChart = echarts.init(statsChartRef.value)
+  updateStatsChart()
+}
+
+// 更新系统统计图表
+const updateStatsChart = () => {
+  if (!statsChart) return
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow'
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: ['风险区域', '活跃预警', '在线监测站', '避难场所', '用户报告']
+    },
+    yAxis: {
+      type: 'value'
+    },
+    series: [
+      {
+        name: '数量',
+        type: 'bar',
+        data: [
+          { value: dashboardStats.value.totalZones, itemStyle: { color: '#ff6b6b' } },
+          { value: dashboardStats.value.activeWarnings, itemStyle: { color: '#feca57' } },
+          { value: systemStatus.value.monitoring.onlineStations, itemStyle: { color: '#48dbfb' } },
+          { value: dashboardStats.value.totalShelters, itemStyle: { color: '#1dd1a1' } },
+          { value: dashboardStats.value.totalReports || 0, itemStyle: { color: '#5f27cd' } }
+        ],
+        barWidth: '60%',
+        label: {
+          show: true,
+          position: 'top'
+        }
+      }
+    ]
+  }
+  
+  statsChart.setOption(option)
+}
+
+// 初始化监测站类型分布图表
+const initStationTypeChart = () => {
+  if (!stationTypeChartRef.value) return
+  stationTypeChart = echarts.init(stationTypeChartRef.value)
+  updateStationTypeChart()
+}
+
+// 更新监测站类型分布图表
+const updateStationTypeChart = () => {
+  if (!stationTypeChart) return
+  
+  // 如果没有数据，显示提示信息
+  if (!stationTypeStats.value.length) {
+    const option = {
+      title: {
+        text: '暂无数据',
+        left: 'center',
+        top: 'center',
+        color: '#909399',
+        fontSize: 14
+      }
+    }
+    stationTypeChart.setOption(option)
+    return
+  }
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow'
+      },
+      formatter: '{b}: {c}'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      top: '10%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: stationTypeStats.value.map((item: any) => item.type_name || item.name || '未知'),
+      axisLabel: {
+        rotate: 45,
+        fontSize: 12,
+        interval: 0
+      }
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1
+    },
+    series: [
+      {
+        name: '监测站数量',
+        type: 'bar',
+        data: stationTypeStats.value.map((item: any) => item.count || 0),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#83bff6' },
+            { offset: 0.5, color: '#188df0' },
+            { offset: 1, color: '#188df0' }
+          ])
+        },
+        barWidth: '50%',
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 12,
+          fontWeight: 'bold'
+        }
+      }
+    ]
+  }
+  
+  stationTypeChart.setOption(option)
+}
+
+// 初始化报告类型统计图表
+const initReportTypeChart = () => {
+  if (!reportTypeChartRef.value) return
+  reportTypeChart = echarts.init(reportTypeChartRef.value)
+  updateReportTypeChart()
+}
+
+// 更新报告类型统计图表
+const updateReportTypeChart = () => {
+  if (!reportTypeChart) return
+  
+  // 如果没有数据，显示提示信息
+  if (!reportTypeStats.value.length) {
+    const option = {
+      title: {
+        text: '暂无数据',
+        left: 'center',
+        top: 'center',
+        color: '#909399',
+        fontSize: 14
+      }
+    }
+    reportTypeChart.setOption(option)
+    return
+  }
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow'
+      },
+      formatter: '{b}: {c}'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      top: '10%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: reportTypeStats.value.map((item: any) => item.report_type || '未知'),
+      axisLabel: {
+        rotate: 45,
+        fontSize: 12,
+        interval: 0
+      }
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1
+    },
+    series: [
+      {
+        name: '报告数量',
+        type: 'bar',
+        data: reportTypeStats.value.map((item: any) => item.count || 0),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#67c23a' },
+            { offset: 0.5, color: '#5daf34' },
+            { offset: 1, color: '#5daf34' }
+          ])
+        },
+        barWidth: '50%',
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 12,
+          fontWeight: 'bold'
+        }
+      }
+    ]
+  }
+  
+  reportTypeChart.setOption(option)
+}
+
+// 初始化灾害类型分布图表
+const initDisasterTypeChart = () => {
+  if (!disasterTypeChartRef.value) return
+  disasterTypeChart = echarts.init(disasterTypeChartRef.value)
+  updateDisasterTypeChart()
+}
+
+// 更新灾害类型分布图表
+const updateDisasterTypeChart = () => {
+  if (!disasterTypeChart || !disasterTypeStats.value.length) return
+  
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b}: {c}'
+    },
+    series: [
+      {
+        name: '灾害类型',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        data: disasterTypeStats.value.map((item: any) => ({
+          value: Math.floor(Math.random() * 100) + 10, // 示例数据，实际应从后端获取统计
+          name: item.name,
+          itemStyle: {
+            color: item.color_code || '#409eff'
+          }
+        })),
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
+          }
+        }
+      }
+    ]
+  }
+  
+  disasterTypeChart.setOption(option)
+}
+
 // 组件挂载
-onMounted(() => {
+onMounted(async () => {
   // 立即更新时间
   updateCurrentTime()
   // 设置时间更新定时器
   timeInterval = setInterval(updateCurrentTime, 1000)
   
   // 获取初始数据
-  fetchDashboardData()
+  await refreshData()
+  
+  // 获取天气数据
+  fetchWeatherData()
+  
+  // 等待DOM渲染完成后初始化图表
+  await nextTick()
+  initRiskLevelChart()
+  initStatsChart()
+  initStationTypeChart()
+  initReportTypeChart()
+  initDisasterTypeChart()
+  
   // 设置数据更新定时器（每30秒更新一次）
-  dataInterval = setInterval(fetchDashboardData, 30000)
+  dataInterval = setInterval(async () => {
+    await refreshData()
+    updateRiskLevelChart()
+    updateStatsChart()
+    updateStationTypeChart()
+    updateReportTypeChart()
+    updateDisasterTypeChart()
+  }, 30000)
+  
+  // 监听窗口大小变化
+  window.addEventListener('resize', () => {
+    riskLevelChart?.resize()
+    statsChart?.resize()
+    stationTypeChart?.resize()
+    reportTypeChart?.resize()
+    disasterTypeChart?.resize()
+  })
 })
 
 // 组件卸载
@@ -375,6 +972,22 @@ onUnmounted(() => {
   if (dataInterval) {
     clearInterval(dataInterval)
   }
+  
+  // 销毁图表实例
+  if (riskLevelChart && !riskLevelChart.isDisposed()) riskLevelChart.dispose()
+  if (statsChart && !statsChart.isDisposed()) statsChart.dispose()
+  if (stationTypeChart && !stationTypeChart.isDisposed()) stationTypeChart.dispose()
+  if (reportTypeChart && !reportTypeChart.isDisposed()) reportTypeChart.dispose()
+  if (disasterTypeChart && !disasterTypeChart.isDisposed()) disasterTypeChart.dispose()
+  
+  // 移除窗口监听
+  window.removeEventListener('resize', () => {
+    riskLevelChart?.resize()
+    statsChart?.resize()
+    stationTypeChart?.resize()
+    reportTypeChart?.resize()
+    disasterTypeChart?.resize()
+  })
 })
 </script>
 
@@ -394,12 +1007,21 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.header-left p {
+  margin: 0;
+  color: #909399;
+  font-size: 14px;
 }
 
 /* 统计概览 */
@@ -619,5 +1241,137 @@ onUnmounted(() => {
   padding: 40px 20px;
   color: #909399;
   font-size: 14px;
+}
+
+/* 紧急报告卡片 */
+.emergency-reports-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 16px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-list {
+  flex: 1;
+  padding: 0 20px 16px;
+  overflow-y: auto;
+}
+
+.report-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.report-item:hover {
+  background-color: #fef0f0;
+  margin: 0 -20px;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.report-item:last-child {
+  border-bottom: none;
+}
+
+.report-content {
+  flex: 1;
+  margin-left: 8px;
+}
+
+.report-title {
+  font-size: 14px;
+  color: #303133;
+  margin-bottom: 4px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.report-time {
+  font-size: 12px;
+  color: #909399;
+}
+
+.status-item.warning {
+  background-color: #fef0f0;
+  padding: 8px;
+  border-radius: 4px;
+  margin: -4px 0;
+}
+
+/* 图表卡片 */
+.chart-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chart-card :deep(.el-card__header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 500;
+  color: #303133;
+}
+
+.chart-card :deep(.el-card__body) {
+  padding: 20px;
+}
+
+/* 天气卡片 */
+.weather-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-content {
+  flex: 1;
+  padding: 0 16px 12px;
+}
+
+.weather-info-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+}
+
+.weather-info-item:last-child {
+  border-bottom: none;
+}
+
+.weather-info-item label {
+  font-size: 13px;
+  color: #909399;
+  flex-shrink: 0;
+  min-width: 45px;
+}
+
+.weather-info-item span {
+  font-size: 13px;
+  color: #606266;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: calc(100% - 53px);
+}
+
+.weather-info-item .value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
 }
 </style>

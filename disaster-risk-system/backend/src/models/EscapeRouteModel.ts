@@ -105,24 +105,17 @@ export class EscapeRouteModel extends BaseModel {
   /**
    * 创建逃生路径记录
    */
-  async create(data: CreateEscapeRouteData): Promise<EscapeRoute> {
-    const query = `
-      INSERT INTO escape_routes (
-        route_id, start_point, end_point, route_geometry,
-        distance_meters, estimated_time_minutes, difficulty_level,
-        elevation_gain, route_conditions, waypoints, alternative_routes,
-        safety_score, weather_dependency, accessibility_info,
-        last_verified_date, verification_status
-      ) VALUES (
-        $1, ST_GeomFromGeoJSON($2), ST_GeomFromGeoJSON($3), ST_GeomFromGeoJSON($4),
-        $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
-      ) RETURNING *,
-        ST_AsGeoJSON(start_point) as start_point_json,
-        ST_AsGeoJSON(end_point) as end_point_json,
-        ST_AsGeoJSON(route_geometry) as route_geometry_json
-    `;
-
-    const values = [
+  async create(data: CreateEscapeRouteData | any): Promise<EscapeRoute> {
+    // 构建动态SQL，支持user_id等扩展字段
+    const fields = [
+      'route_id', 'start_point', 'end_point', 'route_geometry',
+      'distance_meters', 'estimated_time_minutes', 'difficulty_level',
+      'elevation_gain', 'route_conditions', 'waypoints', 'alternative_routes',
+      'safety_score', 'weather_dependency', 'accessibility_info',
+      'last_verified_date', 'verification_status'
+    ];
+    
+    const values: any[] = [
       data.route_id,
       data.start_point ? JSON.stringify(data.start_point) : null,
       data.end_point ? JSON.stringify(data.end_point) : null,
@@ -140,6 +133,40 @@ export class EscapeRouteModel extends BaseModel {
       data.last_verified_date,
       data.verification_status || 'pending'
     ];
+    
+    // 添加扩展字段（如果存在）
+    let paramIndex = values.length + 1;
+    if (data.user_id !== undefined) {
+      fields.push('user_id');
+      values.push(data.user_id);
+    }
+    if (data.is_user_generated !== undefined) {
+      fields.push('is_user_generated');
+      values.push(data.is_user_generated);
+    }
+    if (data.created_by_name !== undefined) {
+      fields.push('created_by_name');
+      values.push(data.created_by_name);
+    }
+    
+    // 构建SQL
+    const placeholders = values.map((_, i) => {
+      const idx = i + 1;
+      // 几何字段需要ST_GeomFromGeoJSON
+      if (i === 1 || i === 2 || i === 3) {
+        return `ST_GeomFromGeoJSON($${idx})`;
+      }
+      return `$${idx}`;
+    }).join(', ');
+    
+    const query = `
+      INSERT INTO escape_routes (${fields.join(', ')})
+      VALUES (${placeholders})
+      RETURNING *,
+        ST_AsGeoJSON(start_point) as start_point_json,
+        ST_AsGeoJSON(end_point) as end_point_json,
+        ST_AsGeoJSON(route_geometry) as route_geometry_json
+    `;
 
     const result = await this.executeQuery(query, values);
     const row = result.rows[0];
@@ -237,21 +264,25 @@ export class EscapeRouteModel extends BaseModel {
         ST_AsGeoJSON(end_point) as end_point_json,
         ST_AsGeoJSON(route_geometry) as route_geometry_json,
         ST_Distance(
-          ST_GeomFromGeoJSON($1),
-          start_point
+          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+          start_point::geography
         ) as distance_to_start
       FROM escape_routes
       WHERE ST_DWithin(
-        ST_GeomFromGeoJSON($1),
-        start_point,
-        $2
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        start_point::geography,
+        $3
       )
-        AND verification_status = 'verified'
-      ORDER BY distance_to_start ASC, safety_score DESC
-      LIMIT 10
+        AND (verification_status = 'verified' OR verification_status = 'system_verified' OR is_user_generated = true)
+      ORDER BY is_user_generated DESC, distance_to_start ASC, safety_score DESC
+      LIMIT 20
     `;
 
-    const values = [JSON.stringify(point), maxDistance];
+    const values = [
+      point.coordinates[0],
+      point.coordinates[1],
+      maxDistance
+    ];
     const result = await this.executeQuery(query, values);
     
     return result.rows.map((row: any) => {
@@ -486,5 +517,84 @@ export class EscapeRouteModel extends BaseModel {
       row.route_geometry = JSON.parse(row.route_geometry_json);
       delete row.route_geometry_json;
     }
+  }
+
+  /**
+   * 删除指定用户生成的所有路径
+   * 用于清理旧数据，只保留最新计算的路径
+   */
+  async deleteUserRoutes(userId: number): Promise<number> {
+    const sql = `
+      DELETE FROM escape_routes 
+      WHERE user_id = $1 AND is_user_generated = true
+      RETURNING id
+    `;
+    
+    const result = await this.executeQuery(sql, [userId]);
+    return result.rows.length;
+  }
+
+  /**
+   * 查找用户是否已有相同起点和终点的路径
+   * 用于判断是更新还是新建
+   */
+  async findSimilarUserRoute(
+    userId: number, 
+    startPoint: Point | undefined | null, 
+    endPoint: Point | undefined | null
+  ): Promise<any | null> {
+    if (!startPoint || !endPoint) {
+      return null;
+    }
+    
+    const sql = `
+      SELECT id, route_id
+      FROM escape_routes
+      WHERE user_id = $1 
+        AND is_user_generated = true
+        AND ST_DWithin(
+          start_point::geography,
+          ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+          100
+        )
+        AND ST_DWithin(
+          end_point::geography,
+          ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
+          100
+        )
+      LIMIT 1
+    `;
+    
+    const result = await this.executeQuery(sql, [
+      userId,
+      startPoint.coordinates[0],
+      startPoint.coordinates[1],
+      endPoint.coordinates[0],
+      endPoint.coordinates[1]
+    ]);
+    
+    return result.rows[0] || null;
+  }
+
+  /**
+   * 获取用户生成的路径列表
+   */
+  async findUserRoutes(userId: number, limit: number = 10): Promise<EscapeRoute[]> {
+    const sql = `
+      SELECT *,
+        ST_AsGeoJSON(start_point) as start_point_json,
+        ST_AsGeoJSON(end_point) as end_point_json,
+        ST_AsGeoJSON(route_geometry) as route_geometry_json
+      FROM escape_routes
+      WHERE user_id = $1 AND is_user_generated = true
+      ORDER BY created_at DESC
+      LIMIT $2
+    `;
+    
+    const result = await this.executeQuery(sql, [userId, limit]);
+    return result.rows.map((row: any) => {
+      this.parseGeometryFields(row);
+      return row;
+    }) as EscapeRoute[];
   }
 }

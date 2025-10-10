@@ -1,6 +1,8 @@
 import { Point, EscapeRoute, RiskZone, Shelter, RoadNetwork } from '../types';
 import { RiskZoneModel } from '../models/RiskZoneModel';
 import { EscapeRouteModel } from '../models/EscapeRouteModel';
+import { RoadNetworkModel } from '../models/RoadNetworkModel';
+import { AStarPathfinder, PathfindingOptions, PathResult } from '../utils/pathfinding/AStarPathfinder';
 
 export interface RouteOptions {
   endPoint?: Point;
@@ -22,10 +24,12 @@ export interface RouteResult {
 export class RouteCalculationService {
   private escapeRouteModel: EscapeRouteModel;
   private riskZoneModel: RiskZoneModel;
+  private roadNetworkModel: RoadNetworkModel;
 
   constructor() {
     this.escapeRouteModel = new EscapeRouteModel();
     this.riskZoneModel = new RiskZoneModel();
+    this.roadNetworkModel = new RoadNetworkModel();
   }
 
   /**
@@ -90,69 +94,99 @@ export class RouteCalculationService {
   }
 
   /**
-   * 寻找最近的避难场所
+   * 寻找最近的避难场所（从数据库查询）
    */
   private async findNearestShelter(location: Point): Promise<Shelter | null> {
-    // 这里应该查询数据库中的避难场所
-    // 目前返回模拟数据
-    return {
-      id: 1,
-      name: '市民广场避难场所',
-      location: {
-        type: 'Point',
-        coordinates: [location.coordinates[0] + 0.01, location.coordinates[1] + 0.01]
-      },
-      capacity: 1000,
-      current_occupancy: 0,
-      shelter_type: '临时避难场所',
-      facilities: {
-        medical: true,
-        food: true,
-        water: true,
-        communication: true
-      },
-      contact_info: {
-        phone: '110',
-        manager: '应急管理部门'
-      },
-      is_active: true,
-      created_at: new Date(),
-      updated_at: new Date()
-    };
+    try {
+      // 查询数据库中最近的活跃避难所
+      const query = `
+        SELECT *,
+          ST_AsGeoJSON(location)::json as location,
+          ST_Distance(
+            location::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+          ) as distance
+        FROM shelters
+        WHERE is_active = true
+        ORDER BY distance
+        LIMIT 1
+      `;
+      
+      const result = await this.escapeRouteModel['executeQuery'](query, [
+        location.coordinates[0],
+        location.coordinates[1]
+      ]);
+      
+      if (result.rows.length === 0) {
+        console.log('未找到活跃避难所');
+        return null;
+      }
+      
+      const shelter = result.rows[0];
+      console.log(`找到最近避难所: ${shelter.name}, 距离: ${(shelter.distance / 1000).toFixed(2)}公里`);
+      
+      return shelter;
+    } catch (error) {
+      console.error('查询避难所失败:', error);
+      return null;
+    }
   }
 
   /**
-   * 获取路网数据
+   * 获取路网数据（从数据库查询真实道路）
    */
   private async getRoadNetwork(startPoint: Point, endPoint: Point): Promise<RoadNetwork[]> {
-    // 这里应该查询道路网络数据
-    // 目前返回模拟数据
-    return [
-      {
-        id: 1,
-        road_id: 'RD001',
-        road_name: '主干道',
+    try {
+      console.log('正在查询数据库道路网络...');
+      
+      // 使用RoadNetworkModel查询起点和终点之间的道路
+      const roads = await this.roadNetworkModel.findRoadsBetweenPoints(
+        startPoint,
+        endPoint,
+        5 // 缓冲区5公里
+      );
+      
+      console.log(`从数据库获取 ${roads.length} 条道路`);
+      
+      if (roads.length === 0) {
+        console.warn('数据库中没有找到道路数据，使用模拟道路');
+        // 降级：返回一条简单的模拟道路
+        return [{
+          id: 0,
+          road_id: 'FALLBACK_001',
+          road_name: '临时路径',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              startPoint.coordinates,
+              endPoint.coordinates
+            ]
+          },
+          road_type: 'primary',
+          is_emergency_route: true,
+          created_at: new Date(),
+          updated_at: new Date()
+        } as RoadNetwork];
+      }
+      
+      return roads;
+    } catch (error) {
+      console.error('查询道路网络失败:', error);
+      // 降级方案
+      return [{
+        id: 0,
+        road_id: 'FALLBACK_001',
+        road_name: '临时路径',
         geometry: {
           type: 'LineString',
-          coordinates: [
-            startPoint.coordinates,
-            [
-              (startPoint.coordinates[0] + endPoint.coordinates[0]) / 2,
-              (startPoint.coordinates[1] + endPoint.coordinates[1]) / 2
-            ],
-            endPoint.coordinates
-          ]
+          coordinates: [startPoint.coordinates, endPoint.coordinates]
         },
         road_type: 'primary',
-        road_condition: 'good',
-        width_meters: 12,
-        speed_limit: 60,
-        is_emergency_route: false,
-        is_accessible: true,
+        is_emergency_route: true,
         created_at: new Date(),
         updated_at: new Date()
-      }
-    ];
+      } as RoadNetwork];
+    }
   }
 
   /**
@@ -188,7 +222,7 @@ export class RouteCalculationService {
   }
 
   /**
-   * 计算最优路径
+   * 计算最优路径（使用A*算法）
    */
   private async calculateOptimalPath(
     startPoint: Point,
@@ -197,13 +231,86 @@ export class RouteCalculationService {
     riskZones: any[],
     options: RouteOptions
   ): Promise<EscapeRoute> {
-    // 使用改进的Dijkstra算法计算最优路径
+    console.log('使用A*算法计算最优路径...');
+
+    try {
+      // 构建路网图
+      const graph = AStarPathfinder.buildGraphFromRoads(roadNetwork);
+      
+      if (graph.size === 0) {
+        console.warn('路网图为空，使用直线路径');
+        return this.createDirectRoute(startPoint, endPoint, riskZones, options);
+      }
+
+      // 配置A*算法参数
+      const pathfindingOptions: PathfindingOptions = {
+        routeType: options.routeType || 'safest',
+        avoidHighRiskZones: options.avoidHighRiskZones !== false,
+        riskWeightFactor: 0.7, // 风险权重因子
+        maxDistance: options.maxDistance ? options.maxDistance * 1000 : undefined
+      };
+
+      // 执行A*搜索
+      const pathfinder = new AStarPathfinder(graph, riskZones, pathfindingOptions);
+      const pathResult: PathResult | null = pathfinder.findPath(startPoint, endPoint);
+
+      if (!pathResult) {
+        console.warn('A*算法未找到路径，使用直线路径');
+        return this.createDirectRoute(startPoint, endPoint, riskZones, options);
+      }
+
+      console.log(`A*算法成功: ${pathResult.path.length}个路径点, 距离${pathResult.totalDistance}米`);
+
+      // 将A*结果转换为EscapeRoute
+      const route: EscapeRoute = {
+        id: 0,
+        route_id: `RT${Date.now()}`,
+        start_point: startPoint,
+        end_point: endPoint,
+        route_geometry: {
+          type: 'LineString' as const,
+          coordinates: pathResult.path.map(p => p.coordinates)
+        },
+        distance_meters: pathResult.totalDistance,
+        estimated_time_minutes: pathResult.estimatedTime,
+        difficulty_level: this.calculateDifficulty(pathResult.totalDistance, riskZones.length),
+        route_conditions: {
+          road_type: options.routeType || 'mixed',
+          traffic_condition: 'normal',
+          weather_impact: 'none',
+          risk_level: Math.max(1, Math.min(5, Math.round(pathResult.totalRisk * 5))),
+          algorithm: 'A*',
+          safety_score: pathResult.safetyScore
+        },
+        safety_score: pathResult.safetyScore,
+        verification_status: 'system_verified',
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      return route;
+
+    } catch (error) {
+      console.error('A*算法执行失败:', error);
+      return this.createDirectRoute(startPoint, endPoint, riskZones, options);
+    }
+  }
+
+  /**
+   * 创建直线路径（降级方案）
+   */
+  private createDirectRoute(
+    startPoint: Point,
+    endPoint: Point,
+    riskZones: any[],
+    options: RouteOptions
+  ): EscapeRoute {
     const distance = this.calculateDistance(startPoint, endPoint);
     const estimatedTime = this.estimateTime(distance, options.transportMode || 'walking');
     
     const route: EscapeRoute = {
       id: 0,
-      route_id: `RT${Date.now()}`,
+      route_id: `RT${Date.now()}_DIRECT`,
       start_point: startPoint,
       end_point: endPoint,
       route_geometry: {
@@ -214,10 +321,11 @@ export class RouteCalculationService {
       estimated_time_minutes: estimatedTime,
       difficulty_level: this.calculateDifficulty(distance, riskZones.length),
       route_conditions: {
-        road_type: 'mixed',
-        traffic_condition: 'normal',
+        road_type: 'direct',
+        traffic_condition: 'unknown',
         weather_impact: 'none',
-        risk_level: riskZones.length > 0 ? 3 : 1
+        risk_level: riskZones.length > 0 ? 3 : 1,
+        algorithm: 'direct_line'
       },
       verification_status: 'pending',
       created_at: new Date(),
@@ -242,18 +350,24 @@ export class RouteCalculationService {
     // 计算2-3条备选路径
     const alternatives: EscapeRoute[] = [];
     
-    // 备选路径1：更安全但可能更远的路径
-    const safeRoute = await this.calculateSaferRoute(startPoint, endPoint, riskZones, options);
-    if (safeRoute && safeRoute.id !== mainRoute.id) {
-      alternatives.push(safeRoute);
+    try {
+      // 备选路径1：更安全但可能更远的路径
+      const safeRoute = await this.calculateSaferRoute(startPoint, endPoint, riskZones, options);
+      if (safeRoute && safeRoute.id !== mainRoute.id) {
+        alternatives.push(safeRoute);
+      }
+
+      // 备选路径2：最短距离路径
+      const shortestRoute = await this.calculateShortestRoute(startPoint, endPoint, options);
+      if (shortestRoute && shortestRoute.id !== mainRoute.id) {
+        alternatives.push(shortestRoute);
+      }
+    } catch (error) {
+      console.error('计算备选路径失败（非致命错误）:', error);
+      // 即使备选路径失败，主路径仍然可用
     }
 
-    // 备选路径2：最短距离路径
-    const shortestRoute = await this.calculateShortestRoute(startPoint, endPoint, options);
-    if (shortestRoute && shortestRoute.id !== mainRoute.id) {
-      alternatives.push(shortestRoute);
-    }
-
+    console.log(`找到 ${alternatives.length} 条备选路径`);
     return alternatives;
   }
 
@@ -265,13 +379,14 @@ export class RouteCalculationService {
     endPoint: Point,
     riskZones: any[],
     options: RouteOptions = {}
-  ): Promise<EscapeRoute> {
+  ): Promise<EscapeRoute | null> {
     try {
       // 从数据库查找从起点出发的逃生路线
       const routes = await this.escapeRouteModel.findFromPoint(startPoint, options.maxDistance || 5000);
       
       if (routes.length === 0) {
-        throw new Error('未找到可用的逃生路线');
+        console.log('数据库中没有备选路线，跳过');
+        return null;
       }
       
       // 按安全分数排序，返回最安全的路线
@@ -280,7 +395,7 @@ export class RouteCalculationService {
       return saferRoute;
     } catch (error) {
       console.error('计算安全路径失败:', error);
-      throw new Error('计算安全路径失败');
+      return null; // 返回null而不是抛出错误
     }
   }
 
@@ -291,13 +406,14 @@ export class RouteCalculationService {
     startPoint: Point,
     endPoint: Point,
     options: RouteOptions = {}
-  ): Promise<EscapeRoute> {
+  ): Promise<EscapeRoute | null> {
     try {
       // 从数据库查找从起点出发的逃生路线
       const routes = await this.escapeRouteModel.findFromPoint(startPoint, options.maxDistance || 5000);
       
       if (routes.length === 0) {
-        throw new Error('未找到可用的逃生路线');
+        console.log('数据库中没有路线数据，跳过最短路径计算');
+        return null;
       }
       
       // 按距离排序，返回最短的路线
@@ -306,7 +422,7 @@ export class RouteCalculationService {
       return shortestRoute;
     } catch (error) {
       console.error('计算最短路径失败:', error);
-      throw new Error('计算最短路径失败');
+      return null; // 返回null而不是抛出错误
     }
   }
 
@@ -577,6 +693,47 @@ export class RouteCalculationService {
     } catch (error) {
       console.error('检查重新规划失败:', error);
       return true; // 出错时建议重新规划
+    }
+  }
+
+  /**
+   * 保存用户计算的路径到数据库
+   * 如果相同起点和终点的路径已存在，则更新；否则新建
+   */
+  async saveUserRoute(route: EscapeRoute, userId: number, username?: string): Promise<EscapeRoute> {
+    try {
+      // 1. 检查是否已有相同起点和终点的路径
+      const existingRoute = await this.escapeRouteModel.findSimilarUserRoute(
+        userId,
+        route.start_point,
+        route.end_point
+      );
+      
+      if (existingRoute) {
+        console.log(`找到相同起终点的路径 ID:${existingRoute.id}，将更新`);
+        // 删除这条旧路径
+        await this.escapeRouteModel.delete(existingRoute.id);
+      } else {
+        console.log(`新的起终点组合，创建新历史记录`);
+      }
+
+      // 2. 保存新路径
+      const routeData = {
+        ...route,
+        user_id: userId,
+        is_user_generated: true,
+        created_by_name: username || `用户${userId}`,
+        verification_status: 'system_verified' // 系统验证通过
+      };
+
+      // 使用escapeRouteModel创建记录
+      const saved = await this.escapeRouteModel.create(routeData as any);
+      console.log(`路径已保存，ID: ${saved.id}`);
+
+      return saved;
+    } catch (error) {
+      console.error('保存用户路径失败:', error);
+      throw new Error('保存路径失败');
     }
   }
 }

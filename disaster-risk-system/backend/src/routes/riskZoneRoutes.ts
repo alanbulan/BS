@@ -7,6 +7,7 @@ const riskZoneController = new RiskZoneController();
 // 风险区域管理路由
 router.post('/', riskZoneController.createRiskZone);                           // 创建风险区域
 router.get('/', riskZoneController.getRiskZones);                              // 获取风险区域列表
+router.get('/export', riskZoneController.exportRiskZones);                     // 导出风险区域（需在/:id之前）
 router.get('/stats', riskZoneController.getRiskZoneStats);                     // 获取风险区域统计信息
 router.get('/location', riskZoneController.getRiskZonesByLocation);            // 根据位置查找风险区域
 router.get('/nearby', riskZoneController.getNearbyRiskZones);                  // 查找附近的风险区域

@@ -24,10 +24,27 @@
       </div>
     </div>
 
+    <!-- 维护预警提示 -->
+    <el-alert
+      v-if="stationStats.maintenance > 0"
+      type="warning"
+      :title="`有 ${stationStats.maintenance} 个监测站需要维护`"
+      :description="`请及时安排维护计划，确保监测数据的准确性和连续性`"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 16px"
+    >
+      <template #default>
+        <el-button size="small" type="warning" @click="showMaintenanceStations">
+          查看详情
+        </el-button>
+      </template>
+    </el-alert>
+
     <!-- 统计概览 -->
     <div class="stats-overview">
       <el-row :gutter="16">
-        <el-col :span="6">
+        <el-col :span="5">
           <div class="stats-card">
             <div class="stats-icon online">
               <el-icon><Monitor /></el-icon>
@@ -38,7 +55,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <div class="stats-card">
             <div class="stats-icon offline">
               <el-icon><Warning /></el-icon>
@@ -49,7 +66,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <div class="stats-card">
             <div class="stats-icon warning">
               <el-icon><Bell /></el-icon>
@@ -60,7 +77,18 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
+          <div class="stats-card clickable" @click="showMaintenanceStations">
+            <div class="stats-icon maintenance">
+              <el-icon><Tools /></el-icon>
+            </div>
+            <div class="stats-info">
+              <div class="stats-number">{{ stationStats.maintenance }}</div>
+              <div class="stats-label">待维护</div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="4">
           <div class="stats-card">
             <div class="stats-icon total">
               <el-icon><DataAnalysis /></el-icon>
@@ -121,7 +149,7 @@
       <div class="table-section">
         <el-table 
           ref="tableRef"
-          :data="filteredStations" 
+          :data="allStations" 
           v-loading="loading"
           stripe
           @selection-change="handleSelectionChange"
@@ -231,19 +259,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { 
-  Plus, Refresh, Search, Monitor, Warning, Bell, DataAnalysis 
+  Plus, Refresh, Search, Monitor, Warning, Bell, DataAnalysis, Tools 
 } from '@element-plus/icons-vue'
-import { monitoringStationsApi } from '@/api/modules/monitoring'
+import { monitoringStationsApi, monitoringStationsApiExtended } from '@/api/modules/monitoring'
 import { monitoringStationTypesApi } from '@/api/modules/monitoring-station-types'
 import type { MonitoringStation } from '@/api/modules/monitoring'
 import type { MonitoringStationType } from '@/types'
 
 // 路由
 const router = useRouter()
+const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
@@ -276,23 +305,12 @@ const stationStats = ref({
   online: 0,
   offline: 0,
   warning: 0,
+  maintenance: 0,
   total: 0
 })
 
-// 实时数据
-// const selectedStation = ref<number | null>(null)
-// const latestData = ref<MonitoringData[]>([])
-// const chartContainer = ref<HTMLElement>()
-
-// 历史数据查询
-// const historyQuery = ref({
-//   stationId: null as number | null,
-//   dateRange: [] as string[]
-// })
-// const historyChartContainer = ref<HTMLElement>()
-
-// 定时器
-// // // let dataRefreshInterval: number | null = null
+// 需要维护的站点
+const maintenanceStations = ref<MonitoringStation[]>([])
 
 // 添加监测站表单
 const stationFormRef = ref()
@@ -315,36 +333,6 @@ const stationRules = {
   longitude: [{ required: true, message: '请输入经度', trigger: 'blur' }],
   latitude: [{ required: true, message: '请输入纬度', trigger: 'blur' }]
 }
-
-// 定时器
-// let dataRefreshInterval: number | null = null
-
-// 计算属性
-const filteredStations = computed(() => {
-  let result = allStations.value || []
-  
-  // 搜索过滤
-  if (queryParams.value.name) {
-    const query = queryParams.value.name.toLowerCase()
-    result = result.filter(station => 
-      station.name.toLowerCase().includes(query) ||
-      station.station_id.toLowerCase().includes(query)
-    )
-  }
-  
-  // 类型过滤
-  if (queryParams.value.station_type) {
-    result = result.filter(station => station.station_type === queryParams.value.station_type)
-  }
-  
-  // 状态过滤
-  if (queryParams.value.is_active) {
-    const isActive = queryParams.value.is_active === 'true'
-    result = result.filter(station => station.is_active === isActive)
-  }
-  
-  return result
-})
 
 
 // 获取监测站点列表
@@ -392,6 +380,7 @@ const updateStationStats = () => {
     online: 0,
     offline: 0,
     warning: 0,
+    maintenance: stationStats.value.maintenance, // 保留维护站点数量
     total: allStations.value.length
   }
   
@@ -671,10 +660,64 @@ const formatTime = (timeStr: string | undefined) => {
 }
 
 
+// 获取需要维护的站点
+const fetchMaintenanceStations = async () => {
+  try {
+    const response = await monitoringStationsApiExtended.getStationsNeedingMaintenance()
+    if (response.success && response.data) {
+      maintenanceStations.value = response.data
+      stationStats.value.maintenance = response.data.length
+    }
+  } catch (error) {
+    console.error('获取维护站点失败:', error)
+    // 静默失败，不影响主要功能
+  }
+}
+
+// 显示维护站点列表
+const showMaintenanceStations = () => {
+  if (maintenanceStations.value.length === 0) {
+    ElMessage.info('暂无需要维护的站点')
+    return
+  }
+  
+  const stationList = maintenanceStations.value.map((station, index) => 
+    `${index + 1}. ${station.name} (${station.station_id})`
+  ).join('<br/>')
+  
+  ElMessageBox.alert(
+    `<div style="max-height: 400px; overflow-y: auto;">${stationList}</div>`,
+    `需要维护的站点 (${maintenanceStations.value.length})`,
+    {
+      dangerouslyUseHTMLString: true,
+      confirmButtonText: '知道了'
+    }
+  )
+}
+
 // 生命周期
 onMounted(async () => {
   await loadStationTypes()
-  fetchStations()
+  await fetchStations()
+  fetchMaintenanceStations()
+  
+  // 检查是否需要自动打开编辑对话框（从详情页跳转过来）
+  const editId = route.query.editId
+  if (editId) {
+    const stationId = Number(editId)
+    if (!isNaN(stationId)) {
+      // 查找对应的站点
+      const station = allStations.value.find(s => s.id === stationId)
+      if (station) {
+        // 自动打开编辑对话框
+        editStation(station)
+        // 清除query参数
+        router.replace({ query: {} })
+      } else {
+        ElMessage.warning('未找到指定的监测站')
+      }
+    }
+  }
 })
 
 onUnmounted(() => {
@@ -693,13 +736,15 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e4e7ed;
 }
 
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {
@@ -726,7 +771,15 @@ onUnmounted(() => {
   align-items: center;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
   transition: all 0.3s;
+}
+
+.stats-card.clickable {
   cursor: pointer;
+}
+
+.stats-card.clickable:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.15);
 }
 
 .stats-card:hover {
@@ -757,6 +810,11 @@ onUnmounted(() => {
 
 .stats-icon.warning {
   background: linear-gradient(135deg, #e6a23c, #ebb563);
+  color: white;
+}
+
+.stats-icon.maintenance {
+  background: linear-gradient(135deg, #409eff, #66b1ff);
   color: white;
 }
 

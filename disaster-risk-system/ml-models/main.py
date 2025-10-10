@@ -12,7 +12,7 @@ import uvicorn
 from pathlib import Path
 
 # 添加项目路径
-sys.path.append(str(Path(__file__).parent / "src"))
+sys.path.append(str(Path(__file__).parent))
 
 from src.config.config import load_config, create_directories
 from src.inference.api.ml_api import app
@@ -153,6 +153,12 @@ def main():
     
     # 设置日志
     setup_logging()
+    
+    # 如果没有提供命令，默认启动API服务
+    if not hasattr(args, 'command') or args.command is None:
+        logging.info("未指定命令，默认启动API服务...")
+        start_api_server()
+        return
     
     if args.command == "serve":
         start_api_server()

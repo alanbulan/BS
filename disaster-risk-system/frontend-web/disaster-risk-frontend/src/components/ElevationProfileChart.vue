@@ -153,11 +153,9 @@ const displayElevationProfile = (elevation: ElevationProfile) => {
       title: {
         text: props.title,
         left: 'center',
-        textStyle: {
-          fontSize: 14,
-          fontWeight: 'bold',
-          color: '#333'
-        }
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#333'
       },
       tooltip: {
         trigger: 'axis',
@@ -294,10 +292,10 @@ onUnmounted(() => {
   if (resizeObserver && chartContainer.value) {
     resizeObserver.unobserve(chartContainer.value)
   }
-  if (chart) {
+  if (chart && !chart.isDisposed()) {
     chart.dispose()
-    chart = null
   }
+  chart = null
 })
 </script>
 

@@ -97,10 +97,7 @@ export const sheltersApi = {
   /**
    * 导出避难所数据
    */
-  exportShelters: (params?: { ids?: number[] }): Promise<ApiResponse<Blob>> => {
-    return request.get('/shelters/export', { 
-      params,
-      responseType: 'blob'
-    })
+  exportShelters: (params?: { ids?: number[] }): Promise<Blob> => {
+    return request.download('/shelters/export', { params })
   }
 }

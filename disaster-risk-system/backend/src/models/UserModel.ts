@@ -29,13 +29,15 @@ export class UserModel extends BaseModel {
       params = keys.map(key => conditions[key]);
     }
     
-    // 查询数据，包含location的文本格式
+    // 查询数据，包含location的文本格式和经纬度
     const dataSql = `
       SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, 
              CASE 
                WHEN location IS NOT NULL THEN ST_AsText(location)
                ELSE NULL 
-             END as location
+             END as location,
+             ST_X(location) as longitude,
+             ST_Y(location) as latitude
       FROM ${this.tableName}${whereClause} 
       ORDER BY id DESC 
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -60,9 +62,9 @@ export class UserModel extends BaseModel {
     };
   }
 
-  // 重写findById方法，包含location字段的文本格式
+  // 重写findById方法，包含location字段的文本格式和经纬度
   async findById(id: number): Promise<any> {
-    const sql = `SELECT id, username, email, phone, role, is_active, created_at, updated_at, ST_AsText(location) as location FROM ${this.tableName} WHERE id = $1`;
+    const sql = `SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, password_hash, avatar_url, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM ${this.tableName} WHERE id = $1`;
     const result = await this.executeQuery(sql, [id]);
     return result.rows[0] || null;
   }
@@ -133,14 +135,14 @@ export class UserModel extends BaseModel {
 
   // 根据用户名查找用户
   async findByUsername(username: string): Promise<User | null> {
-    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, password_hash, ST_AsText(location) as location FROM users WHERE username = $1';
+    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, password_hash, avatar_url, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM users WHERE username = $1';
     const result = await this.executeQuery(sql, [username]);
     return result.rows[0] || null;
   }
 
   // 根据邮箱查找用户
   async findByEmail(email: string): Promise<User | null> {
-    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, password_hash, ST_AsText(location) as location FROM users WHERE email = $1';
+    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, password_hash, avatar_url, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM users WHERE email = $1';
     const result = await this.executeQuery(sql, [email]);
     return result.rows[0] || null;
   }
@@ -160,16 +162,31 @@ export class UserModel extends BaseModel {
 
     // 处理位置数据更新
     if (userData.location) {
-      const pointText = `POINT(${userData.location.coordinates[0]} ${userData.location.coordinates[1]})`;
-      setClause += `, location = ST_GeomFromText($${params.length + 1}, 4326)`;
-      params.push(pointText);
+      let pointText: string;
+      
+      // 支持多种location格式
+      if (typeof userData.location === 'string') {
+        // 字符串格式：直接使用
+        pointText = userData.location;
+      } else if (userData.location.coordinates && Array.isArray(userData.location.coordinates)) {
+        // GeoJSON格式
+        pointText = `POINT(${userData.location.coordinates[0]} ${userData.location.coordinates[1]})`;
+      } else {
+        console.warn('无效的location格式:', userData.location);
+        pointText = null as any;
+      }
+      
+      if (pointText) {
+        setClause += `, location = ST_GeomFromText($${params.length + 1}, 4326)`;
+        params.push(pointText);
+      }
     }
 
     const sql = `
       UPDATE users 
       SET ${setClause}, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
-      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location
+      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, avatar_url, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude
     `;
 
     const result = await this.executeQuery(sql, params);
@@ -199,7 +216,7 @@ export class UserModel extends BaseModel {
       UPDATE users 
       SET location = ST_GeomFromText($2, 4326), updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
-      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location
+      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude
     `;
 
     const result = await this.executeQuery(sql, [id, pointText]);
@@ -228,6 +245,7 @@ export class UserModel extends BaseModel {
   async findNearbyUsers(location: Point, radiusKm: number = 10): Promise<User[]> {
     const sql = `
       SELECT u.id, u.username, u.email, u.full_name, u.phone, u.department, u.position, u.role, u.permissions, u.is_active, u.last_login, u.created_at, u.updated_at, ST_AsText(u.location) as location,
+             ST_X(u.location) as longitude, ST_Y(u.location) as latitude,
              ST_Distance(u.location, ST_GeomFromText('POINT($1 $2)', 4326)) * 111.32 as distance_km
       FROM users u
       WHERE u.location IS NOT NULL 
@@ -251,7 +269,7 @@ export class UserModel extends BaseModel {
       UPDATE users 
       SET is_active = $2, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
-      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location
+      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude
     `;
 
     const result = await this.executeQuery(sql, [id, isActive]);
@@ -288,7 +306,7 @@ export class UserModel extends BaseModel {
 
   // 根据角色查找用户
   async findByRole(role: string): Promise<User[]> {
-    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location FROM users WHERE role = $1 AND is_active = true ORDER BY created_at DESC';
+    const sql = 'SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM users WHERE role = $1 AND is_active = true ORDER BY created_at DESC';
     const result = await this.executeQuery(sql, [role]);
     return result.rows;
   }
@@ -314,7 +332,7 @@ export class UserModel extends BaseModel {
   // 搜索用户
   async searchUsers(query: string, limit: number = 20): Promise<User[]> {
     const sql = `
-      SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location FROM users 
+      SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM users 
       WHERE (username ILIKE $1 OR email ILIKE $1) 
         AND is_active = true
       ORDER BY username
@@ -328,7 +346,7 @@ export class UserModel extends BaseModel {
   // 获取最近注册的用户
   async getRecentUsers(limit: number = 10): Promise<User[]> {
     const sql = `
-      SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location FROM users 
+      SELECT id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude FROM users 
       WHERE is_active = true
       ORDER BY created_at DESC
       LIMIT $1
@@ -378,7 +396,7 @@ export class UserModel extends BaseModel {
       UPDATE users 
       SET is_active = $${userIds.length + 1}, updated_at = CURRENT_TIMESTAMP
       WHERE id IN (${placeholders})
-      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location
+      RETURNING id, username, email, full_name, phone, department, position, role, permissions, is_active, last_login, created_at, updated_at, ST_AsText(location) as location, ST_X(location) as longitude, ST_Y(location) as latitude
     `;
 
     const result = await this.executeQuery(sql, [...userIds, isActive]);

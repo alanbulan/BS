@@ -38,23 +38,33 @@ export class RiskAssessmentController extends BaseController {
    * 批量评估多个区域的风险
    */
   batchAssessRisk = this.asyncHandler(async (req: Request, res: Response) => {
-    const { zoneIds } = req.body;
+    // 兼容zone_ids和zoneIds两种参数名
+    const zoneIds = req.body.zone_ids || req.body.zoneIds;
     
     if (!Array.isArray(zoneIds) || zoneIds.length === 0) {
       return this.error(res, '请提供有效的区域ID数组');
     }
 
     // 验证所有ID都是数字
-    const invalidIds = zoneIds.filter(id => isNaN(Number(id)));
+    const invalidIds = zoneIds.filter((id: any) => isNaN(Number(id)));
     if (invalidIds.length > 0) {
       return this.error(res, `无效的区域ID: ${invalidIds.join(', ')}`);
     }
 
     try {
+      console.log(`[批量评估] 开始评估 ${zoneIds.length} 个风险区域...`);
       const assessments = await this.riskAssessmentService.batchAssessRisk(
-        zoneIds.map(id => Number(id))
+        zoneIds.map((id: any) => Number(id))
       );
-      return this.success(res, assessments, `成功评估 ${assessments.length} 个区域的风险`);
+      
+      const successful = assessments.filter((a: any) => a.current_risk_level).length;
+      const failed = assessments.length - successful;
+      
+      return this.success(res, {
+        successful,
+        failed,
+        assessments
+      }, `批量评估完成：成功${successful}个，失败${failed}个`);
     } catch (error: any) {
       console.error('批量风险评估失败:', error);
       return this.serverError(res, error);

@@ -1,70 +1,145 @@
-# 智能化地质灾害风险评估与逃生路径规划系统
+# 灾害风险管理系统
 
-## 项目简介
-基于多源地理数据融合的智能化地质灾害风险评估系统，为用户提供实时风险监测、智能路径规划和AR导航功能。
+一个综合性的灾害风险管理平台，集成了风险评估、实时监测、预警发布、应急响应等功能。
+
+## 项目架构
+
+- **backend/** - Node.js + TypeScript + Express 后端服务
+- **frontend-web/** - Vue 3 + TypeScript Web 管理端
+- **mobile-app/** - React Native 移动应用
+- **ml-models/** - Python机器学习模型服务
+- **database/** - 数据库脚本和迁移文件
+
+## 主要功能
+
+### 核心功能
+- 🗺️ 风险区域管理与可视化
+- 📊 实时监测数据采集与分析
+- ⚠️ 多级预警发布系统
+- 🚨 应急响应与疏散路线规划
+- 🏠 避难场所管理
+- 📱 用户报告与反馈
+
+### 技术特性
+- 📈 基于ML的风险评估模型
+- 🗺️ PostGIS地理空间数据处理
+- 🔄 实时数据同步
+- 📍 A*路径规划算法
+- 🌐 RESTful API架构
+
+## 技术栈
+
+### 后端
+- Node.js + TypeScript
+- Express.js
+- PostgreSQL + PostGIS
+- Redis
+- Winston (日志)
+
+### 前端
+- Vue 3 + TypeScript
+- Element Plus
+- Pinia (状态管理)
+- Axios
+
+### 移动端
+- React Native
+- TypeScript
+- React Navigation
+
+### ML服务
+- Python
+- FastAPI
+- Scikit-learn
+- Pandas
 
 ## 快速开始
 
 ### 环境要求
-- Node.js >= 16.0.0
+- Node.js >= 16.x
 - Python >= 3.8
-- PostgreSQL >= 13.0 (with PostGIS extension)
-- Redis >= 6.0
+- PostgreSQL >= 13 (with PostGIS extension)
+- Redis >= 6.x
 
-### 安装步骤
-1. 克隆项目
-```bash
-git clone <repository-url>
-cd disaster-risk-system
-```
+### 安装依赖
 
-2. 安装后端依赖
 ```bash
-cd backend
+# 后端
+cd disaster-risk-system/backend
 npm install
-```
 
-3. 安装前端依赖
-```bash
-cd ../frontend-web
+# 前端
+cd disaster-risk-system/frontend-web/disaster-risk-frontend
 npm install
+
+# 移动端
+cd disaster-risk-system/mobile-app
+npm install
+
+# ML服务
+cd disaster-risk-system/ml-models
+pip install -r requirements.txt
 ```
 
-4. 配置数据库
+### 配置
+
+1. 复制 `backend/.env.example` 到 `backend/.env` 并配置数据库连接
+2. 初始化数据库：
 ```bash
-cd ../database
-# 执行数据库初始化脚本
+psql -U your_user -d your_database -f database/schema.sql
 ```
 
-5. 启动服务
-```bash
-# 启动后端服务
-cd ../backend
-npm run dev
+### 运行
 
-# 启动前端服务
-cd ../frontend-web
-npm run dev
+```bash
+# 使用一键启动脚本
+./一键启动全部.bat
+
+# 或分别启动各服务
+cd disaster-risk-system/backend && npm run dev  # 后端: http://localhost:3000
+cd disaster-risk-system/frontend-web/disaster-risk-frontend && npm run dev  # 前端: http://localhost:5173
+cd disaster-risk-system/ml-models && python main.py  # ML服务: http://localhost:8000
 ```
 
 ## 项目结构
-详见 [项目规划.md](./项目规划.md)
 
-## 技术栈
-- **后端**: Node.js + Express.js + TypeScript + PostgreSQL + PostGIS
-- **前端**: Vue3 + TypeScript + Element Plus + Leaflet
-- **移动端**: React Native + TypeScript
-- **机器学习**: Python + TensorFlow + Scikit-learn
+```
+disaster-risk-system/
+├── backend/               # 后端服务
+│   ├── src/
+│   │   ├── controllers/  # 控制器
+│   │   ├── models/       # 数据模型
+│   │   ├── routes/       # 路由
+│   │   ├── services/     # 业务逻辑
+│   │   └── utils/        # 工具函数
+│   └── dist/             # 编译输出 (不提交)
+├── frontend-web/          # Web前端
+│   └── disaster-risk-frontend/
+│       └── src/
+│           ├── components/  # 组件
+│           ├── views/       # 页面
+│           ├── api/         # API封装
+│           └── styles/      # 样式
+├── mobile-app/            # 移动应用
+│   └── src/
+│       ├── screens/      # 页面
+│       ├── components/   # 组件
+│       └── api/          # API
+├── ml-models/            # 机器学习服务
+│   └── src/
+│       ├── models/      # ML模型
+│       ├── inference/   # 推理服务
+│       └── training/    # 训练脚本
+└── database/             # 数据库脚本
+    ├── schema.sql       # 数据库结构
+    └── migrations/      # 迁移文件
+```
 
-## 开发进度
-- [√] 项目规划和架构设计
-- [√] 数据库设计和创建
-- [√] 后端API开发
-- [√] 前端界面开发
-- [ ] 移动端开发
-- [ ] 机器学习模型训练
-- [ ] 系统集成测试
+## API文档
 
+后端API运行后访问 `http://localhost:3000/api-docs` 查看Swagger文档
 
 ## 许可证
+
 MIT License
+

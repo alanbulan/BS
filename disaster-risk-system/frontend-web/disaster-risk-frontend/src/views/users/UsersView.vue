@@ -195,6 +195,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import type { User } from '@/types'
 import { formatDateTime } from '@/utils'
+import { formatCoordinate } from '@/utils/coordinate'
 import { usersApi } from '@/api'
 
 // 响应式数据
@@ -429,64 +430,8 @@ const getRoleTagType = (role: string) => {
   return typeMap[role as keyof typeof typeMap] || 'info'
 }
 
-const formatLocation = (location: string | null) => {
-  if (!location) return '未设置'
-  
-  try {
-    // 处理十六进制PostGIS格式 (如: 0101000020E6100000...)
-    if (location.startsWith('0101000020')) {
-      try {
-        // PostGIS WKB格式: 01(字节序) 01000020(几何类型+SRID标志) E6100000(SRID=4326) + 坐标数据
-        // 跳过: 01(1字节) + 01000020(4字节) + E6100000(4字节) = 18个字符
-        const coordStart = 18
-        const coordData = location.substring(coordStart)
-        
-        if (coordData.length >= 32) { // 需要32个字符(16字节)表示两个double
-          // 将十六进制转换为字节数组
-          const bytes = []
-          for (let i = 0; i < coordData.length; i += 2) {
-            bytes.push(parseInt(coordData.substr(i, 2), 16))
-          }
-          
-          // 创建DataView读取坐标 (PostGIS使用little-endian)
-          const buffer = new Uint8Array(bytes).buffer
-          const view = new DataView(buffer)
-          
-          // 读取X坐标(经度)和Y坐标(纬度)
-          const longitude = view.getFloat64(0, true) // little-endian
-          const latitude = view.getFloat64(8, true)  // little-endian
-          
-          // 验证坐标范围是否合理
-          if (longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90) {
-            return `${longitude.toFixed(4)}, ${latitude.toFixed(4)}`
-          } else {
-            return '坐标超出范围'
-          }
-        } else {
-          return '数据格式错误'
-        }
-      } catch (error) {
-        return '解析失败'
-      }
-    }
-    
-    // 处理 POINT(longitude latitude) 格式
-    if (location.startsWith('POINT(')) {
-      const locationText = location.replace('POINT(', '').replace(')', '')
-      const coords = locationText.split(' ')
-      
-      if (coords.length === 2) {
-        const longitude = parseFloat(coords[0]).toFixed(4)
-        const latitude = parseFloat(coords[1]).toFixed(4)
-        return `${longitude}, ${latitude}`
-      }
-    }
-  } catch (error) {
-    // 静默处理错误
-  }
-  
-  return '格式错误'
-}
+// 使用统一的坐标格式化工具
+const formatLocation = formatCoordinate
 
 // 生命周期
 onMounted(() => {
@@ -504,7 +449,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e4e7ed;
 }
 

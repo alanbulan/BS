@@ -2,7 +2,10 @@
   <div class="user-report-detail">
     <div class="page-header">
       <div class="header-left">
-        <el-button @click="goBack" :icon="ArrowLeft">返回</el-button>
+        <el-button @click="goBack" class="back-btn">
+          <el-icon><ArrowLeft /></el-icon>
+          <span>返回列表</span>
+        </el-button>
         <div class="title-area">
           <h1>用户报告详情</h1>
           <p>查看和处理用户提交的灾害报告详情</p>
@@ -166,11 +169,17 @@
               <el-image
                 v-for="(image, index) in report.images"
                 :key="index"
-                :src="image"
-                :preview-src-list="report.images"
+                :src="typeof image === 'string' ? image : image.url"
+                :preview-src-list="imageUrls"
                 fit="cover"
                 class="report-image"
-              />
+              >
+                <template #error>
+                  <div class="image-slot">
+                    <el-icon><Picture /></el-icon>
+                  </div>
+                </template>
+              </el-image>
             </div>
           </div>
           <div v-if="report.videos?.length" class="videos-section">
@@ -179,7 +188,7 @@
               <video
                 v-for="(video, index) in report.videos"
                 :key="index"
-                :src="video"
+                :src="typeof video === 'string' ? video : video.url"
                 controls
                 class="report-video"
               />
@@ -188,10 +197,32 @@
         </div>
       </el-card>
 
-      <!-- 统计信息 -->
+      <!-- 互动与统计信息 -->
       <el-card class="stats-card">
         <template #header>
-          <span>互动统计</span>
+          <div class="card-header">
+            <span>互动统计</span>
+            <div class="vote-buttons">
+              <el-button 
+                type="success" 
+                size="small" 
+                @click="handleVote('upvote')"
+                :disabled="voting"
+              >
+                <el-icon><ArrowUp /></el-icon>
+                支持 ({{ report.upvotes || 0 }})
+              </el-button>
+              <el-button 
+                type="danger" 
+                size="small" 
+                @click="handleVote('downvote')"
+                :disabled="voting"
+              >
+                <el-icon><ArrowDown /></el-icon>
+                反对 ({{ report.downvotes || 0 }})
+              </el-button>
+            </div>
+          </div>
         </template>
         <div class="stats-content">
           <el-row :gutter="24">
@@ -278,10 +309,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Check, Close, RefreshRight, Document, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, Close, RefreshRight, Document, ArrowUp, ArrowDown, Picture } from '@element-plus/icons-vue'
 import type { UserReport } from '@/types'
 import { formatDateTime } from '@/utils'
+import { formatCoordinate } from '@/utils/coordinate'
 import { useUserReportsStore } from '@/stores/user-reports'
+import { userReportsApi } from '@/api/modules/user-reports'
 
 const route = useRoute()
 const router = useRouter()
@@ -289,6 +322,7 @@ const userReportsStore = useUserReportsStore()
 
 // 响应式数据
 const loading = ref(true)
+const voting = ref(false)
 const report = ref<UserReport | null>(null)
 const verificationDialogVisible = ref(false)
 const verificationLoading = ref(false)
@@ -305,6 +339,14 @@ const verificationDialogTitle = computed(() => {
     pending: '重置为待验证'
   }
   return statusMap[verificationForm.value.status]
+})
+
+// 图片URL数组（用于预览）
+const imageUrls = computed(() => {
+  if (!report.value?.images) return []
+  return report.value.images.map((img: string | { url: string; desc?: string }) => 
+    typeof img === 'string' ? img : img.url
+  )
 })
 
 // 方法
@@ -341,6 +383,32 @@ const loadReportDetail = async () => {
  */
 const goBack = () => {
   router.push('/user-reports')
+}
+
+/**
+ * 处理投票
+ */
+const handleVote = async (voteType: 'upvote' | 'downvote') => {
+  if (!report.value) return
+  
+  try {
+    voting.value = true
+    const response = await userReportsApi.updateVotes(report.value.id, voteType)
+    
+    if (response.success && response.data) {
+      // 更新本地数据
+      report.value.upvotes = response.data.upvotes
+      report.value.downvotes = response.data.downvotes
+      ElMessage.success(voteType === 'upvote' ? '已支持该报告' : '已反对该报告')
+    } else {
+      ElMessage.error('投票失败')
+    }
+  } catch (error) {
+    console.error('投票失败:', error)
+    ElMessage.error('投票失败')
+  } finally {
+    voting.value = false
+  }
 }
 
 /**
@@ -413,8 +481,9 @@ const resetVerificationDialog = () => {
 const getReportTypeText = (type: string) => {
   const typeMap = {
     disaster: '灾害报告',
-    risk: '风险发现',
-    facility: '设施损坏',
+    infrastructure: '基础设施',
+    safety: '安全',
+    environmental: '环境',
     other: '其他'
   }
   return typeMap[type as keyof typeof typeMap] || type
@@ -461,87 +530,8 @@ const getStatusTagType = (status: string) => {
   return typeMap[status as keyof typeof typeMap] || 'info'
 }
 
-/**
- * 将数据库中的 location 字段（支持WKB十六进制与WKT/EWKT POINT格式）格式化为“经度, 纬度”的可读文本
- * - 若为空返回“暂无位置信息”
- * - 若无法解析返回“格式错误”
- * - 支持：
- *   1) EWKB 小端十六进制：0101000020E6100000...（含SRID=4326）
- *   2) WKB 小端十六进制：0101000000...（不含SRID）
- *   3) WKT：POINT(lon lat)
- *   4) EWKT：SRID=4326;POINT(lon lat)
- */
-const formatLocation = (location: string | null | undefined): string => {
-  if (!location) return '暂无位置信息'
-  try {
-    const loc = location.trim()
-
-    // 处理 EWKB/WKB 十六进制
-    if (/^(?:01)[0-9A-Fa-f]+$/.test(loc)) {
-      try {
-        // 小端WKB：开头 01，接着4字节类型与标志，若含SRID则再跟4字节SRID
-        // 根据是否包含 0x20000000 标志（十六进制前缀表现为 0101000020）来决定坐标起始位置
-        let coordStartHexChars = 0
-        if (loc.startsWith('0101000020')) {
-          // 1(字节序) + 4(类型|标志) + 4(SRID) = 9字节 = 18个hex
-          coordStartHexChars = 18
-        } else if (loc.startsWith('0101000000')) {
-          // 1(字节序) + 4(类型) = 5字节 = 10个hex
-          coordStartHexChars = 10
-        }
-        if (coordStartHexChars > 0) {
-          const coordData = loc.substring(coordStartHexChars)
-          if (coordData.length >= 32) {
-            const bytes: number[] = []
-            for (let i = 0; i < coordData.length; i += 2) {
-              bytes.push(parseInt(coordData.substr(i, 2), 16))
-            }
-            const buffer = new Uint8Array(bytes).buffer
-            const view = new DataView(buffer)
-            const longitude = view.getFloat64(0, true)
-            const latitude = view.getFloat64(8, true)
-            if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
-              if (longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90) {
-                return `${longitude.toFixed(4)}, ${latitude.toFixed(4)}`
-              }
-              return '坐标超出范围'
-            }
-            return '数据格式错误'
-          }
-          return '数据格式错误'
-        }
-      } catch (e) {
-        // fallthrough 到后续解析
-      }
-    }
-
-    // 处理 EWKT：SRID=xxxx;POINT(...)
-    if (/^SRID=\d+;/.test(loc)) {
-      const after = loc.split(';', 2)[1] || ''
-      const m = /POINT\s*(?:Z)?\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i.exec(after)
-      if (m) {
-        const lon = Number(m[1]); const lat = Number(m[2])
-        if (!Number.isNaN(lon) && !Number.isNaN(lat)) {
-          return `${lon.toFixed(4)}, ${lat.toFixed(4)}`
-        }
-      }
-    }
-
-    // 处理 WKT：POINT(lon lat) / POINT Z(lon lat)
-    if (/^POINT/i.test(loc)) {
-      const m = /POINT\s*(?:Z)?\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i.exec(loc)
-      if (m) {
-        const lon = Number(m[1]); const lat = Number(m[2])
-        if (!Number.isNaN(lon) && !Number.isNaN(lat)) {
-          return `${lon.toFixed(4)}, ${lat.toFixed(4)}`
-        }
-      }
-    }
-  } catch (e) {
-    // 忽略解析异常
-  }
-  return '格式错误'
-}
+// 使用统一的坐标格式化工具（后端已返回经纬度字段，无需复杂解析）
+const formatLocation = formatCoordinate
 
 // 生命周期
 onMounted(() => {
@@ -659,6 +649,18 @@ onMounted(() => {
   width: 100%;
   height: 150px;
   border-radius: 8px;
+  cursor: pointer;
+}
+
+.image-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  background: #f5f7fa;
+  color: #909399;
+  font-size: 30px;
 }
 
 .videos-grid {
@@ -726,5 +728,14 @@ onMounted(() => {
 .media-card,
 .stats-card {
   margin-bottom: 20px;
+}
+
+.vote-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.vote-buttons .el-button {
+  min-width: 100px;
 }
 </style>

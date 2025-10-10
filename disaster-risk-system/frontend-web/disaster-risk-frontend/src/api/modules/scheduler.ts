@@ -50,17 +50,17 @@ export const schedulerApi = {
 
   // 手动执行自动风险评估
   manualAutoAssess: (): Promise<ApiResponse<AutoAssessResult>> => {
-    return request.post('/scheduler/manual/auto-assess');
+    return request.post('/scheduler/auto-assess');
   },
 
   // 手动处理过期预警
   manualProcessExpired: (): Promise<ApiResponse<ExpiredWarningsResult>> => {
-    return request.post('/scheduler/manual/process-expired');
+    return request.post('/scheduler/process-expired');
   },
 
   // 手动清理过期Token
   manualCleanupTokens: (): Promise<ApiResponse<TokenCleanupResult>> => {
-    return request.post('/scheduler/manual/cleanup-tokens');
+    return request.post('/scheduler/cleanup-tokens');
   },
 
   // 启动定时任务

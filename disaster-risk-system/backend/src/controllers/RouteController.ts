@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { BaseController } from './BaseController';
 import { RouteCalculationService, RouteOptions } from '../services/RouteCalculationService';
 import { Point } from '../types';
+import { pool } from '../config/database';
 
 export class RouteController extends BaseController {
   private routeService: RouteCalculationService;
@@ -41,6 +42,25 @@ export class RouteController extends BaseController {
       };
 
       const result = await this.routeService.calculateEscapeRoute(startPoint as Point, options);
+
+      // 如果用户已登录，保存路径到数据库
+      if (req.user?.id) {
+        const saveToDb = req.body.saveToDatabase !== false; // 默认保存
+        if (saveToDb) {
+          try {
+            console.log(`[SAVE] 尝试保存用户 ${req.user.username}(ID:${req.user.id}) 的路径...`);
+            const saved = await this.routeService.saveUserRoute(result.route, req.user.id, req.user.username);
+            console.log(`[SAVE] 路径已保存，数据库ID: ${saved.id}`);
+          } catch (saveError: any) {
+            console.error('[ERROR] 保存路径失败:', saveError.message, saveError.stack);
+            // 不影响主流程，只记录错误
+          }
+        } else {
+          console.log('[SAVE] 用户选择不保存路径');
+        }
+      } else {
+        console.log('[SAVE] 用户未登录，跳过保存');
+      }
 
       this.success(res, result, '路径计算成功');
     } catch (error) {
@@ -114,47 +134,29 @@ export class RouteController extends BaseController {
         return;
       }
 
-      // 这里应该查询数据库获取最近的避难场所
-      // 目前返回模拟数据
-      const shelters = [
-        {
-          id: 1,
-          name: '市民广场避难场所',
-          location: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude as string) + 0.01, parseFloat(latitude as string) + 0.01]
-          },
-          distance: 1200,
-          capacity: 1000,
-          current_occupancy: 150,
-          facilities: {
-            medical: true,
-            food: true,
-            water: true,
-            communication: true
-          }
-        },
-        {
-          id: 2,
-          name: '体育馆避难场所',
-          location: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude as string) - 0.01, parseFloat(latitude as string) + 0.02]
-          },
-          distance: 1800,
-          capacity: 2000,
-          current_occupancy: 300,
-          facilities: {
-            medical: true,
-            food: true,
-            water: true,
-            communication: true,
-            parking: true
-          }
-        }
-      ];
-
-      this.success(res, shelters.slice(0, parseInt(limit as string)), '获取避难场所成功');
+      // 查询数据库获取最近的避难场所
+      const query = `
+        SELECT *,
+          ST_AsGeoJSON(location)::json as location,
+          ST_Distance(
+            location::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+          ) as distance
+        FROM shelters
+        WHERE is_active = true
+        ORDER BY distance
+        LIMIT $3
+      `;
+      
+      const result = await pool.query(query, [
+        parseFloat(longitude as string),
+        parseFloat(latitude as string),
+        parseInt(limit as string)
+      ]);
+      
+      const shelters = result.rows;
+      
+      this.success(res, shelters, '获取避难场所成功');
     } catch (error) {
       console.error('获取避难场所失败:', error);
       this.error(res, '获取避难场所失败: ' + (error as Error).message, 500);
@@ -169,46 +171,24 @@ export class RouteController extends BaseController {
     try {
       const { routeId } = req.params;
 
-      // 这里应该从数据库查询路径详情
-      // 目前返回模拟数据
-      const routeDetails = {
-        id: parseInt(routeId),
-        route_id: `route_${routeId}`,
-        start_point: {
-          type: 'Point',
-          coordinates: [116.4074, 39.9042]
-        },
-        end_point: {
-          type: 'Point',
-          coordinates: [116.4174, 39.9142]
-        },
-        route_geometry: {
-          type: 'LineString',
-          coordinates: [
-            [116.4074, 39.9042],
-            [116.4124, 39.9092],
-            [116.4174, 39.9142]
-          ]
-        },
-        distance_meters: 1500,
-        estimated_time_minutes: 18,
-        difficulty_level: 2,
-        safety_score: 4.2,
-        waypoints: [
-          {
-            coordinates: [116.4124, 39.9092],
-            instruction: '右转进入主干道',
-            distance_to_next: 750
-          }
-        ],
-        warnings: [
-          '路段可能有轻微拥堵，请预留额外时间'
-        ],
-        verification_status: 'verified',
-        last_verified_date: new Date(),
-        created_at: new Date(),
-        updated_at: new Date()
-      };
+      // 从数据库查询路径详情
+      const query = `
+        SELECT *,
+          ST_AsGeoJSON(start_point)::json as start_point,
+          ST_AsGeoJSON(end_point)::json as end_point,
+          ST_AsGeoJSON(route_geometry)::json as route_geometry
+        FROM escape_routes
+        WHERE id = $1
+      `;
+      
+      const result = await pool.query(query, [parseInt(routeId)]);
+      
+      if (result.rows.length === 0) {
+        this.notFound(res, '路径不存在');
+        return;
+      }
+      
+      const routeDetails = result.rows[0];
 
       this.success(res, routeDetails, '获取路径详情成功');
     } catch (error) {

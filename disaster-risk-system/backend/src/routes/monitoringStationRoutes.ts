@@ -10,13 +10,15 @@ const controller = new MonitoringStationController();
 router.use(verifyToken);
 router.get('/', controller.getStations);
 router.get('/statistics', controller.getStationStatistics);
+router.get('/stats/types', controller.getStationTypeStats);
+router.get('/maintenance/needed', controller.getStationsNeedingMaintenance);
 router.get('/:id', controller.getStationDetail);
 
 // 需要专家或管理员权限的路由
-router.use(authorize(['expert', 'admin']));
-router.post('/', controller.createStation);
-router.put('/:id', controller.updateStation);
-router.put('/batch/status', controller.batchUpdateStationStatus);
+router.post('/', authorize(['expert', 'admin']), controller.createStation);
+router.put('/:id', authorize(['expert', 'admin']), controller.updateStation);
+router.patch('/:id/maintenance-schedule', authorize(['expert', 'admin']), controller.updateMaintenanceSchedule);
+router.put('/batch/status', authorize(['expert', 'admin']), controller.batchUpdateStationStatus);
 
 // 需要管理员权限的路由
 router.use(requireAdmin);

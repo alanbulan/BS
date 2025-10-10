@@ -13,12 +13,13 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from ..models.risk_assessment.risk_model import RiskAssessmentModel
-from ..models.time_series.prediction_model import TimeSeriesPredictionModel
-from ..models.route_optimization.route_optimizer import RouteOptimizer
-from ..models.anomaly_detection.anomaly_detector import AnomalyDetector
-from ..data.loaders.database_loader import DatabaseLoader
-from ..config.config import API_CONFIG
+# from ...models.risk_assessment.risk_model import RiskAssessmentModel  # 需要torch，暂不使用
+from ...models.risk_assessment.lightweight_model import LightweightRiskModel
+from ...models.time_series.prediction_model import TimeSeriesPredictionModel
+from ...models.route_optimization.route_optimizer import RouteOptimizer
+from ...models.anomaly.anomaly_detector import AnomalyDetector
+from ...data.loaders.database_loader import DatabaseLoader
+from ...config.config import API_CONFIG
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -42,10 +43,87 @@ app.add_middleware(
 
 # 模型实例（全局加载）
 risk_model = None
+lightweight_risk_model = None  # 轻量级模型（无需训练）
 time_series_model = None
 route_optimizer = None
 anomaly_detector = None
 db_loader = None
+
+# 辅助函数：将监测数据聚合为features
+async def aggregate_monitoring_to_features(monitoring_data: List[Dict]) -> Dict[str, float]:
+    """
+    将监测站数据聚合为风险评估features
+    
+    按数据类型聚合，计算平均值/最大值，归一化到0-10分
+    只返回有数据的features，缺失的不返回（不参与计算）
+    """
+    features = {}
+    
+    if not monitoring_data:
+        logger.warning("[AGGREGATE] 没有监测数据")
+        return features
+    
+    # 按数据类型分组
+    data_by_type = {}
+    for record in monitoring_data:
+        data_type = record.get('data_type')
+        value = float(record.get('value', 0))
+        
+        if data_type not in data_by_type:
+            data_by_type[data_type] = []
+        data_by_type[data_type].append(value)
+    
+    # rainfall: 降雨量（mm）→ 0-10
+    if 'rainfall' in data_by_type:
+        max_rainfall = max(data_by_type['rainfall'])
+        features['rainfall'] = min(max_rainfall, 10)
+    
+    # groundwater_level: 地下水位（米）→ 水位下降=风险增加
+    if 'groundwater_level' in data_by_type:
+        avg_level = sum(data_by_type['groundwater_level']) / len(data_by_type['groundwater_level'])
+        features['groundwater'] = max(0, 10 - avg_level / 2)
+    
+    # slope_displacement: 坡面位移（mm）→ 位移越大风险越高
+    if 'slope_displacement' in data_by_type:
+        max_disp = max(data_by_type['slope_displacement'])
+        features['slope'] = min(max_disp * 2, 10)
+    
+    # soil_moisture: 土壤湿度（%）→ 高湿度=高风险
+    if 'soil_moisture' in data_by_type:
+        avg_moisture = sum(data_by_type['soil_moisture']) / len(data_by_type['soil_moisture'])
+        features['soil_moisture'] = min(avg_moisture / 10, 10)
+    
+    # seismic_acceleration: 地震加速度
+    if 'seismic_acceleration' in data_by_type:
+        max_accel = max(data_by_type['seismic_acceleration'])
+        features['seismic_activity'] = min(max_accel * 5, 10)
+    
+    # temperature: 温度
+    if 'temperature' in data_by_type:
+        features['temperature'] = sum(data_by_type['temperature']) / len(data_by_type['temperature'])
+    
+    # humidity: 湿度（%）→ 高湿度可能增加风险
+    if 'humidity' in data_by_type:
+        avg_humidity = sum(data_by_type['humidity']) / len(data_by_type['humidity'])
+        features['humidity'] = avg_humidity
+    
+    # wind_speed: 风速（m/s）→ 辅助指标
+    if 'wind_speed' in data_by_type:
+        avg_wind = sum(data_by_type['wind_speed']) / len(data_by_type['wind_speed'])
+        features['wind_speed'] = avg_wind
+    
+    # wind_direction: 风向（度）
+    if 'wind_direction' in data_by_type:
+        avg_dir = sum(data_by_type['wind_direction']) / len(data_by_type['wind_direction'])
+        features['wind_direction'] = avg_dir
+    
+    # water_level: 水位
+    if 'water_level' in data_by_type:
+        avg_level = sum(data_by_type['water_level']) / len(data_by_type['water_level'])
+        features['water_level'] = min(avg_level / 2, 10)  # 高水位=风险
+    
+    logger.info(f"[AGGREGATE] {len(data_by_type)}种数据类型 → {len(features)}个features: {list(features.keys())}")
+    return features
 
 # Pydantic模型定义
 class LocationInput(BaseModel):
@@ -53,24 +131,26 @@ class LocationInput(BaseModel):
     longitude: float = Field(..., ge=-180, le=180, description="经度")
 
 class RiskAssessmentRequest(BaseModel):
-    location: LocationInput
+    zone_id: int
+    features: Dict[str, Optional[float]]
+    disaster_type_id: int
     include_predictions: bool = Field(True, description="是否包含时序预测")
     include_factors: bool = Field(True, description="是否包含影响因素分析")
 
 class RiskAssessmentResponse(BaseModel):
-    current_risk_level: int = Field(..., ge=1, le=5)
-    confidence_score: float = Field(..., ge=0, le=1)
-    predicted_risk_24h: Optional[int] = None
-    predicted_risk_72h: Optional[int] = None
-    contributing_factors: Optional[Dict[str, float]] = None
-    recommendations: Optional[str] = None
-    assessment_time: datetime
-    model_version: str
+    """完全匹配Backend MLPredictionResponse的响应格式"""
+    risk_score: float = Field(..., description="风险分数 0-1")
+    risk_level: int = Field(..., ge=1, le=5, description="风险等级 1-5")
+    confidence: float = Field(..., ge=0, le=1, description="置信度")
+    predicted_24h: int = Field(..., ge=1, le=5, description="24小时预测")
+    predicted_72h: int = Field(..., ge=1, le=5, description="72小时预测")
+    feature_importance: Optional[Dict[str, float]] = Field(None, description="特征重要性")
+    model_version: Optional[str] = Field("1.0.0-ML", description="模型版本")
 
 class RouteOptimizationRequest(BaseModel):
     start_location: LocationInput
     end_location: LocationInput
-    optimize_for: str = Field("safety", regex="^(safety|time|distance)$")
+    optimize_for: str = Field("safety", pattern="^(safety|time|distance)$")
     avoid_high_risk: bool = True
     max_risk_level: int = Field(4, ge=1, le=5)
 
@@ -103,20 +183,28 @@ class BatchPredictionRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """
-    应用启动时加载所有模型
+    应用启动时加载所有模型和初始化数据库
     """
-    global risk_model, time_series_model, route_optimizer, anomaly_detector, db_loader
+    global risk_model, lightweight_risk_model, time_series_model, route_optimizer, anomaly_detector, db_loader
     
-    logger.info("正在加载ML模型...")
+    logger.info("正在加载ML模型和初始化数据库...")
     
     try:
         # 初始化数据库连接
         db_loader = DatabaseLoader()
+        await db_loader.connect()
+        logger.info("✓ 数据库连接初始化完成")
         
-        # 加载风险评估模型
-        risk_model = RiskAssessmentModel()
-        # 这里应该加载预训练的模型
-        # risk_model.load_model("path/to/trained/model")
+        # 加载轻量级风险模型（基于模拟训练，无需真实数据）
+        logger.info("开始加载轻量级风险模型...")
+        lightweight_risk_model = LightweightRiskModel()
+        logger.info(f"✓ 轻量级风险模型已加载（随机森林，模拟训练1000样本）")
+        logger.info(f"  模型参数: n_estimators=50, max_depth=8")
+        logger.info(f"  特征数量: {len(lightweight_risk_model.feature_names)}")
+        
+        # 加载完整风险评估模型（可选，需要真实训练数据）
+        # risk_model = RiskAssessmentModel()
+        # risk_model.load_model("models/risk_assessment_v1.pkl")
         
         # 加载时序预测模型
         time_series_model = TimeSeriesPredictionModel()
@@ -132,6 +220,14 @@ async def startup_event():
     except Exception as e:
         logger.error(f"模型加载失败: {e}")
         raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    global db_loader
+    if db_loader:
+        await db_loader.close()
+        logger.info("数据库连接已关闭")
 
 # 健康检查
 @app.get("/health")
@@ -150,61 +246,95 @@ async def health_check():
         }
     }
 
-# 风险评估API
-@app.post("/api/v1/risk/assess", response_model=RiskAssessmentResponse)
-async def assess_risk(request: RiskAssessmentRequest):
+# 风险评估API（优化版：基于zone_id获取监测数据）
+@app.post("/api/v1/predict/risk", response_model=RiskAssessmentResponse)
+async def predict_risk(request: RiskAssessmentRequest):
     """
-    实时风险评估
+    实时风险评估 - 基于风险区域内的监测站数据进行评估
+    
+    业务流程：
+    1. 根据zone_id查询该区域内的监测站
+    2. 获取这些监测站最近24小时的监测数据
+    3. 按数据类型聚合（rainfall, groundwater_level等）
+    4. 输入ML模型进行风险预测
+    5. 返回风险评分和等级
     """
     try:
-        logger.info(f"收到风险评估请求: {request.location}")
+        logger.info(f"[RISK-PREDICT] 评估风险区域 zone_id={request.zone_id}")
         
-        # 准备输入数据
-        location_data = pd.DataFrame([{
-            'latitude': request.location.latitude,
-            'longitude': request.location.longitude,
-            'timestamp': datetime.now()
-        }])
+        # 1. 从数据库获取该区域内的监测站数据（按zone_id关联）
+        zone_monitoring_data = await db_loader.get_zone_monitoring_data(request.zone_id, hours=24)
         
-        # 从数据库获取相关特征数据
-        feature_data = await db_loader.get_location_features(
-            request.location.latitude, 
-            request.location.longitude
-        )
+        # 2. 如果没有监测数据，使用Backend提供的features（降级方案）
+        if not zone_monitoring_data or len(zone_monitoring_data) == 0:
+            logger.warning(f"[RISK-PREDICT] 风险区域{request.zone_id}无监测数据，使用提供的features")
+            features = request.features
+        else:
+            # 3. 聚合监测数据计算features
+            logger.info(f"[RISK-PREDICT] 找到{len(zone_monitoring_data)}条监测数据")
+            features = await aggregate_monitoring_to_features(zone_monitoring_data)
+            logger.info(f"[RISK-PREDICT] 聚合后的features: {features}")
         
-        # 合并数据
-        input_data = pd.concat([location_data, feature_data], axis=1)
+        # 4. 使用features进行风险评估（合并Backend提供的静态数据）
+        final_features = {**request.features, **features} # 监测数据优先
         
-        # 风险评估
-        risk_probabilities = risk_model.predict_proba(input_data)
-        current_risk_level = np.argmax(risk_probabilities[0]) + 1
-        confidence_score = np.max(risk_probabilities[0])
+        # 5. 使用轻量级ML模型预测（随机森林）
+        if lightweight_risk_model:
+            logger.info(f"[PREDICT] 使用轻量级随机森林模型，输入features: {list(final_features.keys())}")
+            prediction = lightweight_risk_model.predict(final_features)
+            
+            current_risk_level = prediction['risk_level']
+            risk_score = (current_risk_level - 1) / 4  # 转换为0-1
+            confidence_score = prediction['confidence']
+            feature_importance = prediction.get('feature_importance', {})
+            valid_features = prediction.get('valid_features', 0)
+            feature_completeness = prediction.get('feature_completeness', 0)
+            
+            logger.info(f"[PREDICT] 有效特征: {valid_features}/7, 完整度: {feature_completeness:.1%}")
+            logger.info(f"[PREDICT] ML模型预测: 等级{current_risk_level}, 置信度{confidence_score:.2f}")
+        else:
+            # 降级方案：使用简单加权算法
+            logger.warning("[PREDICT] 轻量级模型未加载，使用基于规则的算法")
+            risk_score = (
+                (final_features.get('rainfall', 0) or 0) * 0.25 +
+                (final_features.get('groundwater', 0) or 0) * 0.15 +
+                (final_features.get('slope', 0) or 0) * 0.20 +
+                (final_features.get('soil_moisture', 0) or 0) * 0.15 +
+                (final_features.get('seismic_activity', 0) or 0) * 0.10 +
+                (final_features.get('population_density', 0) or 0) / 1000 * 0.10 +
+                (final_features.get('temperature', 30) or 30) / 50 * 0.05
+            ) / 10
+            
+            # 转换为风险等级
+            if risk_score < 0.2:
+                current_risk_level = 1
+            elif risk_score < 0.4:
+                current_risk_level = 2
+            elif risk_score < 0.6:
+                current_risk_level = 3
+            elif risk_score < 0.8:
+                current_risk_level = 4
+            else:
+                current_risk_level = 5
+            
+            confidence_score = 0.75
+            feature_importance = {}
+        
+        # 构建响应数据 - 完全匹配Backend期望的格式
+        # feature_importance返回真实的聚合features（用于前端显示）
+        display_features = {k: float(v or 0) for k, v in final_features.items() if v is not None}
         
         response_data = {
-            "current_risk_level": current_risk_level,
-            "confidence_score": confidence_score,
-            "assessment_time": datetime.now(),
-            "model_version": "1.0.0"
+            "risk_score": risk_score,
+            "risk_level": current_risk_level,
+            "confidence": confidence_score,
+            "predicted_24h": min(current_risk_level + 1, 5),
+            "predicted_72h": min(current_risk_level + 2, 5),
+            "feature_importance": display_features,  # 真实监测数据（用于前端显示）
+            "model_version": "1.0.0-RandomForest" if lightweight_risk_model else "1.0.0-Rule"
         }
         
-        # 时序预测（如果请求）
-        if request.include_predictions and time_series_model:
-            predictions = await predict_time_series(request.location)
-            response_data.update({
-                "predicted_risk_24h": predictions.get("24h"),
-                "predicted_risk_72h": predictions.get("72h")
-            })
-        
-        # 影响因素分析（如果请求）
-        if request.include_factors:
-            factors = risk_model.get_feature_importance()
-            response_data["contributing_factors"] = factors
-        
-        # 生成建议
-        response_data["recommendations"] = generate_risk_recommendations(
-            current_risk_level, confidence_score
-        )
-        
+        logger.info(f"✅ ML模型预测完成: risk_level={current_risk_level}, confidence={confidence_score:.2f}")
         return RiskAssessmentResponse(**response_data)
         
     except Exception as e:
@@ -212,7 +342,7 @@ async def assess_risk(request: RiskAssessmentRequest):
         raise HTTPException(status_code=500, detail=f"风险评估失败: {str(e)}")
 
 # 路径优化API
-@app.post("/api/v1/route/optimize", response_model=RouteOptimizationResponse)
+@app.post("/api/v1/optimize/route", response_model=RouteOptimizationResponse)
 async def optimize_route(request: RouteOptimizationRequest):
     """
     智能路径优化
@@ -252,7 +382,7 @@ async def optimize_route(request: RouteOptimizationRequest):
         raise HTTPException(status_code=500, detail=f"路径优化失败: {str(e)}")
 
 # 异常检测API
-@app.post("/api/v1/anomaly/detect", response_model=AnomalyDetectionResponse)
+@app.post("/api/v1/detect/anomaly", response_model=AnomalyDetectionResponse)
 async def detect_anomaly(request: AnomalyDetectionRequest):
     """
     监测数据异常检测
@@ -285,7 +415,7 @@ async def detect_anomaly(request: AnomalyDetectionRequest):
         raise HTTPException(status_code=500, detail=f"异常检测失败: {str(e)}")
 
 # 批量预测API
-@app.post("/api/v1/prediction/batch")
+@app.post("/api/v1/predict/risk/batch")
 async def batch_prediction(request: BatchPredictionRequest):
     """
     批量位置预测

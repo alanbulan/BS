@@ -590,7 +590,9 @@ const initializeCharts = async () => {
     const analysis = analyzeData(items, typeCountOverride)
     
     // 清除现有图表
-    charts.forEach(chart => chart?.dispose())
+    charts.forEach(chart => {
+      if (chart && !chart.isDisposed()) chart.dispose()
+    })
     charts = []
 
     // 初始化各个图表
@@ -660,7 +662,9 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
   }
-  charts.forEach(chart => chart?.dispose())
+  charts.forEach(chart => {
+    if (chart && !chart.isDisposed()) chart.dispose()
+  })
   charts = []
 })
 </script>

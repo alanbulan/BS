@@ -3,9 +3,9 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-title">
-        <el-button link type="primary" @click="goBack" class="back-btn">
-          <el-icon style="margin-right: 4px;"><ArrowLeft /></el-icon>
-          返回
+        <el-button @click="goBack" class="back-btn">
+          <el-icon><ArrowLeft /></el-icon>
+          <span>返回列表</span>
         </el-button>
         <h1>逃生路线详情</h1>
       </div>
@@ -667,10 +667,6 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-}
-
-.back-btn {
-  color: #1890ff;
 }
 
 .coordinate-display {

@@ -95,6 +95,6 @@ export const systemConfigApi = {
     memory_usage: number;
     cpu_usage: number;
   }>> => {
-    return request.get('/system-config/system-info')
+    return request.get('/system-config/system/info')
   }
 }

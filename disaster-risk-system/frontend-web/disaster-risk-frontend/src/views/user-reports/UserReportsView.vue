@@ -30,8 +30,9 @@
             <el-form-item label="报告类型">
               <el-select v-model="filters.report_type" placeholder="请选择报告类型" clearable>
                 <el-option label="灾害报告" value="disaster" />
-                <el-option label="风险发现" value="risk" />
-                <el-option label="设施损坏" value="facility" />
+                <el-option label="基础设施" value="infrastructure" />
+                <el-option label="安全" value="safety" />
+                <el-option label="环境" value="environmental" />
                 <el-option label="其他" value="other" />
               </el-select>
             </el-form-item>
@@ -268,18 +269,22 @@ const verifyReport = async (id: number, status: 'verified' | 'rejected') => {
       }
     }
   } catch (error) {
-    if ((error as any) !== 'cancel') {
-      console.error('验证/拒绝操作失败:', error)
-      ElMessage.error('操作失败')
+    // 用户取消操作，静默处理
+    if (error === 'cancel' || error === 'close' || (error as any) === 'cancel') {
+      return
     }
+    // 其他错误才提示
+    console.error('验证/拒绝操作失败:', error)
+    ElMessage.error('操作失败')
   }
 }
 
 const getReportTypeText = (type: string) => {
   const typeMap = {
     disaster: '灾害报告',
-    risk: '风险发现',
-    facility: '设施损坏',
+    infrastructure: '基础设施',
+    safety: '安全',
+    environmental: '环境',
     other: '其他'
   }
   return typeMap[type as keyof typeof typeMap] || type
@@ -337,6 +342,8 @@ onMounted(() => {
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {

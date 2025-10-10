@@ -492,4 +492,56 @@ export class RoadNetworkController extends BaseController {
     this.success(res, report);
     return;
   });
+
+  /**
+   * 导出道路网络数据
+   */
+  exportRoads = this.asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.query;
+      
+      let roads: any[] = [];
+      
+      if (ids && Array.isArray(ids)) {
+        // 导出指定ID的道路
+        for (const id of ids) {
+          const road = await this.roadNetworkModel.findById(parseInt(id as string));
+          if (road) roads.push(road);
+        }
+      } else {
+        // 导出所有道路
+        const result = await this.roadNetworkModel.paginate(1, 10000);
+        roads = result.data;
+      }
+      
+      // 生成CSV内容
+      const headers = ['ID', '道路ID', '名称', '道路类型', '道路等级', '长度(米)', '宽度(米)', '路面类型', '最大速度', '是否应急路线', '维护状态', '创建时间'];
+      const rows = roads.map(r => [
+        r.id,
+        r.road_id || '',
+        r.name,
+        r.road_type || '',
+        r.road_class || '',
+        r.length || '',
+        r.width || '',
+        r.surface_type || '',
+        r.max_speed || '',
+        r.is_emergency_route ? '是' : '否',
+        r.maintenance_status || '',
+        r.created_at
+      ]);
+      
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="road_network_${Date.now()}.csv"`);
+      res.send('\uFEFF' + csvContent);
+      return;
+    } catch (error) {
+      return this.serverError(res, error);
+    }
+  });
 }

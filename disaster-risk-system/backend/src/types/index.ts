@@ -249,7 +249,7 @@ export interface UserReport {
   disaster_type_id?: number;
   title?: string;
   description?: string;
-  severity?: number;
+  severity: number;
   images?: any;
   videos?: any;
   verification_status: string;

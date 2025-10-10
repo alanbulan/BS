@@ -74,7 +74,12 @@ export const riskAssessmentsApi = {
     disaster_type_id: number
     assessment_factors?: any
   }): Promise<ApiResponse<RiskAssessment>> => {
-    return request.post('/risk-assessments/assess-zone', data)
+    return request.post(`/risk-assessments/assess/zone/${data.zone_id}`)
+  },
+
+  // 单个区域风险评估
+  assessRisk: (zoneId: number): Promise<ApiResponse<RiskAssessment>> => {
+    return request.post(`/risk-assessments/assess/${zoneId}`)
   },
 
   // 批量评估风险

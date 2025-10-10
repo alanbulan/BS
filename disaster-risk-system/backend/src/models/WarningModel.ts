@@ -240,8 +240,10 @@ export class WarningModel {
 
   static async findActiveWarnings(): Promise<Warning[]> {
     const query = `
-      SELECT w.*, dt.name as disaster_type_name, rz.name as zone_name,
-             ST_AsText(w.affected_area) as affected_area_wkt
+      SELECT w.*, 
+             dt.name as disaster_type_name, 
+             rz.name as zone_name,
+             ST_AsGeoJSON(w.affected_area)::json as affected_area
       FROM warnings w
       LEFT JOIN disaster_types dt ON w.disaster_type_id = dt.id
       LEFT JOIN risk_zones rz ON w.zone_id = rz.id

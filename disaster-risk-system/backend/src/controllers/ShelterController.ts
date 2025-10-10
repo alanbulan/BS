@@ -119,21 +119,19 @@ export class ShelterController extends BaseController {
       radius: parseFloat(radius as string)
     };
 
-    const shelters = await this.shelterModel.findNearest(location, parseInt(limit as string));
+    console.log('查询最近避难所:', { location, limit });
 
-    // 计算距离并添加到结果中
-    const sheltersWithDistance = shelters.map((shelter: Shelter) => {
-      if (shelter.location) {
-        const distance = this.calculateDistance(
-          { coordinates: [location.longitude, location.latitude] } as Point,
-          shelter.location
-        );
-        return { ...shelter, distance: Math.round(distance) };
-      }
-      return shelter;
-    });
+    try {
+      const shelters = await this.shelterModel.findNearest(location, parseInt(limit as string));
+      
+      console.log(`找到 ${shelters.length} 个避难所`);
 
-    this.success(res, sheltersWithDistance, '获取最近避难场所成功');
+      // 距离已经在SQL中计算，直接返回
+      this.success(res, shelters, '获取最近避难场所成功');
+    } catch (error) {
+      console.error('查询避难所失败:', error);
+      throw error;
+    }
   });
 
   /**

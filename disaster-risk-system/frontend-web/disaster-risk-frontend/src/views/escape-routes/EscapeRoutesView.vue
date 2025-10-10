@@ -408,6 +408,8 @@ const verifyRouteAction = async (id: number, status: 'verified' | 'pending' | 'r
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {

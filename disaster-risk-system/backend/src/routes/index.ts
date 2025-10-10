@@ -17,6 +17,8 @@ import roadNetworkRoutes from './roadNetworkRoutes';
 import dashboardRoutes from './dashboardRoutes';
 import { SystemConfigController } from '../controllers/SystemConfigController';
 import monitoringStationTypeRoutes from './monitoringStationTypeRoutes';
+import weatherRoutes from './weatherRoutes';
+import uploadRoutes from './uploadRoutes';
 
 const router = Router();
 const systemConfigController = new SystemConfigController();
@@ -59,7 +61,9 @@ router.get(`${API_VERSION}`, (req, res) => {
       escapeRoutes: `${API_VERSION}/escape-routes`,
       systemConfig: `${API_VERSION}/system-config`,
       roadNetwork: `${API_VERSION}/road-network`,
-      dashboard: `${API_VERSION}/dashboard`
+      dashboard: `${API_VERSION}/dashboard`,
+      weather: `${API_VERSION}/weather`,
+      uploads: `${API_VERSION}/uploads`
     },
     documentation: {
       health: '/health',
@@ -74,18 +78,22 @@ router.use(`${API_VERSION}/users`, userRoutes);
 router.use(`${API_VERSION}/disaster-types`, disasterTypeRoutes);
 router.use(`${API_VERSION}/risk-zones`, riskZoneRoutes);
 router.use(`${API_VERSION}/risk-assessments`, riskAssessmentRoutes);
-router.use(`${API_VERSION}/monitoring`, monitoringRoutes);
 router.use(`${API_VERSION}/monitoring-stations`, monitoringStationRoutes);
+router.use(`${API_VERSION}/monitoring/stations`, monitoringStationRoutes); // 添加别名支持前端路径（必须在monitoring之前）
+router.use(`${API_VERSION}/monitoring`, monitoringRoutes);
 router.use(`${API_VERSION}/monitoring-station-types`, monitoringStationTypeRoutes);
 router.use(`${API_VERSION}/shelters`, shelterRoutes);
 router.use(`${API_VERSION}/routes`, routeRoutes);
 router.use(`${API_VERSION}/reports`, userReportRoutes);
+router.use(`${API_VERSION}/user-reports`, userReportRoutes); // 添加别名支持前端路径
 router.use(`${API_VERSION}/warnings`, warningRoutes);
 router.use(`${API_VERSION}/scheduler`, schedulerRoutes);
 router.use(`${API_VERSION}/escape-routes`, escapeRouteRoutes);
 router.use(`${API_VERSION}/system-config`, systemConfigRoutes);
 router.use(`${API_VERSION}/road-network`, roadNetworkRoutes);
 router.use(`${API_VERSION}/dashboard`, dashboardRoutes);
+router.use(`${API_VERSION}/weather`, weatherRoutes);
+router.use(`${API_VERSION}/uploads`, uploadRoutes);
 
 // 404处理
 router.use('*', (req, res) => {

@@ -88,7 +88,7 @@ export const roadNetworkApi = {
     failed: number
     errors?: string[]
   }>> => {
-    return request.post('/road-network/batch-import', { roads: data })
+    return request.post('/road-network/batch/import', { roads: data })
   },
 
   // 获取道路统计信息

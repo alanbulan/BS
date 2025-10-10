@@ -1,8 +1,12 @@
+import { Pool } from 'pg';
+import { pool } from '../config/database';
 import { RiskZoneModel } from '../models/RiskZoneModel';
 import { MonitoringDataModel } from '../models/MonitoringDataModel';
 import { RiskAssessmentModel, CreateRiskAssessmentData } from '../models/RiskAssessmentModel';
 import { RiskZone, MonitoringData, Point, RiskAssessment } from '../types';
 import { configService } from './ConfigService';
+import { WeatherService, WeatherData } from './WeatherService';
+import { mlService, MLPredictionRequest } from './MLService';
 
 export interface RiskFactors {
   rainfall: number;        // 降雨量 (mm/h)
@@ -26,6 +30,7 @@ export class RiskAssessmentService {
   private riskZoneModel: RiskZoneModel;
   private monitoringDataModel: MonitoringDataModel;
   private riskAssessmentModel: RiskAssessmentModel;
+  private weatherService: WeatherService;
   private highRiskThreshold: number = 4; // 缓存的高风险阈值
 
   // 不同灾害类型的权重配置 (按disaster_type_id)
@@ -68,6 +73,7 @@ export class RiskAssessmentService {
     this.riskZoneModel = new RiskZoneModel();
     this.monitoringDataModel = new MonitoringDataModel();
     this.riskAssessmentModel = new RiskAssessmentModel();
+    this.weatherService = new WeatherService(pool);
     this.initializeConfigListeners();
   }
 
@@ -92,6 +98,7 @@ export class RiskAssessmentService {
 
   /**
    * 评估指定区域的当前风险等级
+   * 优先使用ML模型，如果ML服务不可用则降级到基于规则的算法
    */
   async assessCurrentRisk(zoneId: number): Promise<RiskAssessment> {
     try {
@@ -101,27 +108,88 @@ export class RiskAssessmentService {
         throw new Error(`风险区域 ${zoneId} 不存在`);
       }
 
-      // 获取最近24小时的监测数据
-      const monitoringData = await this.getRecentMonitoringData(zone.geometry);
+      // 获取风险区域中心点
+      const centerPoint = await this.getZoneCenterPoint(zone.geometry);
+
+      // 获取该风险区域内监测站的最近24小时数据
+      const monitoringData = await this.getRecentMonitoringData(zoneId);
       
-      // 计算风险因子
-      const riskFactors = await this.calculateRiskFactors(zone, monitoringData);
+      // 获取当前天气数据
+      let weatherData: WeatherData | null = null;
+      try {
+        weatherData = await this.weatherService.getCurrentWeather(
+          centerPoint.latitude,
+          centerPoint.longitude
+        );
+      } catch (error) {
+        console.warn('获取天气数据失败，将不考虑天气因素:', error);
+      }
       
-      // 获取灾害类型权重
-      const weights = this.getDisasterWeights(zone.disaster_type_id.toString());
+      // 计算风险因子（包含天气数据）
+      let riskFactors = await this.calculateRiskFactors(zone, monitoringData, weatherData);
       
-      // 计算综合风险评分
-      const riskScore = this.calculateRiskScore(riskFactors, weights);
+      // 尝试使用ML模型进行预测
+      const mlPrediction = await this.tryMLPrediction(zone, riskFactors, weatherData);
       
-      // 转换为风险等级 (1-5)
-      const currentRiskLevel = await this.scoreToRiskLevel(riskScore);
+      let currentRiskLevel: number;
+      let predicted24h: number;
+      let predicted72h: number;
+      let confidenceScore: number;
+      let riskScore: number;
+      let weights: RiskWeights;
+      let assessmentMethod: string;
+      let modelVersion: string;
       
-      // 预测未来风险
-      const predicted24h = await this.predictFutureRisk(zone, riskFactors, 24);
-      const predicted72h = await this.predictFutureRisk(zone, riskFactors, 72);
-      
-      // 计算置信度
-      const confidenceScore = this.calculateConfidence(monitoringData, zone);
+      if (mlPrediction) {
+        // 使用ML模型的预测结果
+        console.log(`✅ 使用ML模型预测风险（区域${zoneId}），置信度:${mlPrediction.confidence.toFixed(2)}`);
+        currentRiskLevel = mlPrediction.risk_level;
+        predicted24h = mlPrediction.predicted_24h;
+        predicted72h = mlPrediction.predicted_72h;
+        confidenceScore = mlPrediction.confidence;
+        riskScore = mlPrediction.risk_score;
+        weights = this.getDisasterWeights(zone.disaster_type_id.toString());
+        assessmentMethod = 'ML智能预测';
+        modelVersion = mlPrediction.model_version || '1.0.0-ML';
+        console.log(`📊 ML返回：risk_level=${currentRiskLevel}, confidence=${confidenceScore}, version=${modelVersion}`);
+        
+        // 如果ML返回了feature_importance，用它覆盖riskFactors（显示真实监测数据）
+        if (mlPrediction.feature_importance) {
+          console.log('🔄 ML返回的feature_importance:', JSON.stringify(mlPrediction.feature_importance));
+          console.log('🔄 更新前的riskFactors:', JSON.stringify(riskFactors));
+          
+          riskFactors = {
+            rainfall: mlPrediction.feature_importance.rainfall !== undefined ? mlPrediction.feature_importance.rainfall : riskFactors.rainfall,
+            groundwater: mlPrediction.feature_importance.groundwater !== undefined ? mlPrediction.feature_importance.groundwater : riskFactors.groundwater,
+            slope: mlPrediction.feature_importance.slope !== undefined ? mlPrediction.feature_importance.slope : riskFactors.slope,
+            soilMoisture: mlPrediction.feature_importance.soil_moisture !== undefined ? mlPrediction.feature_importance.soil_moisture : riskFactors.soilMoisture,
+            seismicActivity: mlPrediction.feature_importance.seismic_activity !== undefined ? mlPrediction.feature_importance.seismic_activity : riskFactors.seismicActivity,
+            populationDensity: riskFactors.populationDensity  // 人口密度用原值
+          };
+          
+          console.log('🔄 更新后的riskFactors:', JSON.stringify(riskFactors));
+        } else {
+          console.log('⚠️ ML未返回feature_importance');
+        }
+      } else {
+        // 降级到基于规则的算法
+        console.log(`使用基于规则的算法评估风险（区域${zoneId}）`);
+        weights = this.getDisasterWeights(zone.disaster_type_id.toString());
+        riskScore = this.calculateRiskScore(riskFactors, weights);
+        
+        // 如果有天气数据，应用天气风险权重
+        if (weatherData) {
+          const weatherRiskWeight = this.weatherService.calculateWeatherRiskWeight(weatherData);
+          riskScore = riskScore * (1 + weatherRiskWeight * 0.3);
+        }
+        
+        currentRiskLevel = await this.scoreToRiskLevel(riskScore);
+        predicted24h = await this.predictFutureRisk(zone, riskFactors, 24);
+        predicted72h = await this.predictFutureRisk(zone, riskFactors, 72);
+        confidenceScore = this.calculateConfidence(monitoringData, zone);
+        assessmentMethod = '规则算法';
+        modelVersion = '1.0.0-Rule';
+      }
 
       const assessment: RiskAssessment = {
         id: 0, // 将在保存时生成
@@ -133,9 +201,12 @@ export class RiskAssessmentService {
         contributing_factors: {
           factors: riskFactors,
           weights: weights,
-          score: riskScore
+          score: riskScore,
+          weatherData: weatherData // 添加天气数据到评估结果
         },
-        confidence_score: confidenceScore
+        confidence_score: confidenceScore,
+        assessment_method: assessmentMethod,
+        model_version: modelVersion
       };
 
       // 保存评估结果
@@ -193,32 +264,101 @@ export class RiskAssessmentService {
   /**
    * 获取最近的监测数据
    */
-  private async getRecentMonitoringData(zoneGeometry: any): Promise<MonitoringData[]> {
+  /**
+   * 获取风险区域内监测站的最近监测数据（按zone_id关联）
+   */
+  private async getRecentMonitoringData(zoneId: number): Promise<MonitoringData[]> {
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // 24小时前
 
-    return await this.monitoringDataModel.findByTimeRange({
-      startTime,
-      endTime,
-      geometry: zoneGeometry
-    });
+    // 使用zone_id直接关联查询（更明确的业务逻辑）
+    const query = `
+      SELECT md.*, ms.name as station_name, ms.station_type
+      FROM monitoring_data md
+      INNER JOIN monitoring_stations ms ON md.station_id = ms.station_id
+      WHERE ms.zone_id = $1
+        AND md.timestamp BETWEEN $2 AND $3
+        AND md.quality_flag >= 1
+      ORDER BY md.timestamp DESC
+      LIMIT 500
+    `;
+    
+    const queryStart = Date.now();
+    const result = await pool.query(query, [zoneId, startTime.toISOString(), endTime.toISOString()]);
+    const queryTime = Date.now() - queryStart;
+    
+    console.log(`[RISK-ASSESS] 风险区域${zoneId}监测数据: ${result.rows.length}条，查询耗时:${queryTime}ms`);
+    
+    return result.rows;
+  }
+
+  /**
+   * 获取风险区域中心点
+   */
+  private async getZoneCenterPoint(geometry: any): Promise<{ latitude: number; longitude: number }> {
+    try {
+      const query = `
+        SELECT 
+          ST_Y(ST_Centroid($1::geometry)) as latitude,
+          ST_X(ST_Centroid($1::geometry)) as longitude
+      `;
+      const result = await pool.query(query, [geometry]);
+      
+      if (result.rows.length > 0) {
+        return {
+          latitude: parseFloat(result.rows[0].latitude),
+          longitude: parseFloat(result.rows[0].longitude)
+        };
+      }
+      
+      // 默认值（如果几何数据无效）
+      return { latitude: 0, longitude: 0 };
+    } catch (error) {
+      console.error('获取区域中心点失败:', error);
+      return { latitude: 0, longitude: 0 };
+    }
   }
 
   /**
    * 计算风险因子
    */
-  private async calculateRiskFactors(zone: RiskZone, monitoringData: MonitoringData[]): Promise<RiskFactors> {
+  private async calculateRiskFactors(
+    zone: RiskZone, 
+    monitoringData: MonitoringData[],
+    weatherData?: WeatherData | null
+  ): Promise<RiskFactors> {
     // 按数据类型分组
     const dataByType = this.groupDataByType(monitoringData);
 
+    // 如果有天气数据，使用天气数据增强降雨因子
+    let rainfallFactor = this.calculateRainfallFactor(dataByType.rainfall || []);
+    if (weatherData && weatherData.rainfall_24h > 0) {
+      // 使用天气数据提供的24小时降雨量
+      const weatherRainfallFactor = this.normalizeRainfallToFactor(weatherData.rainfall_24h);
+      // 取两者的最大值
+      rainfallFactor = Math.max(rainfallFactor, weatherRainfallFactor);
+    }
+
     return {
-      rainfall: this.calculateRainfallFactor(dataByType.rainfall || []),
+      rainfall: rainfallFactor,
       groundwater: this.calculateGroundwaterFactor(dataByType.groundwater || []),
       slope: zone.slope_avg || 0,
       soilMoisture: this.calculateSoilMoistureFactor(dataByType.soil_moisture || []),
       seismicActivity: this.calculateSeismicFactor(dataByType.seismic || []),
       populationDensity: zone.population_density || 0
     };
+  }
+
+  /**
+   * 将降雨量转换为风险因子 (0-5)
+   */
+  private normalizeRainfallToFactor(rainfall24h: number): number {
+    if (rainfall24h >= 100) return 5;
+    if (rainfall24h >= 50) return 4;
+    if (rainfall24h >= 25) return 3;
+    if (rainfall24h >= 10) return 2;
+    if (rainfall24h > 0) return 1;
+    return 0;
   }
 
   /**
@@ -592,6 +732,64 @@ export class RiskAssessmentService {
     } catch (error) {
       console.error('获取风险评估统计失败:', error);
       throw new Error('获取风险评估统计失败');
+    }
+  }
+
+  /**
+   * 尝试使用ML模型进行风险预测
+   * 如果ML服务不可用，返回null并降级到规则算法
+   */
+  private async tryMLPrediction(
+    zone: RiskZone, 
+    riskFactors: RiskFactors, 
+    weatherData: WeatherData | null
+  ): Promise<any | null> {
+    const startTime = Date.now();  // 移到外层
+    
+    try {
+      // 检查ML服务是否可用
+      const isMLAvailable = await mlService.isAvailable();
+      if (!isMLAvailable) {
+        console.log('⚠️ ML服务不可用，将使用规则算法');
+        return null;
+      }
+      
+      console.log(`🤖 调用ML服务评估区域${zone.id}...`);
+
+      // 构建ML预测请求
+      const mlRequest: MLPredictionRequest = {
+        zone_id: zone.id!,
+        features: {
+          rainfall: riskFactors.rainfall,
+          groundwater: riskFactors.groundwater,
+          slope: riskFactors.slope,
+          soil_moisture: riskFactors.soilMoisture,
+          seismic_activity: riskFactors.seismicActivity,
+          population_density: riskFactors.populationDensity,
+          temperature: weatherData?.temperature,
+          humidity: weatherData?.humidity,
+          wind_speed: weatherData?.wind_speed,
+          elevation: zone.elevation_avg || 0
+        },
+        disaster_type_id: zone.disaster_type_id
+      };
+
+      // 调用ML服务
+      const prediction = await mlService.predictRisk(mlRequest);
+      
+      const elapsed = Date.now() - startTime;
+      if (prediction) {
+        console.log(`✅ ML预测完成，耗时${elapsed}ms，风险等级:${prediction.risk_level}`);
+      } else {
+        console.log(`⚠️ ML预测返回空，耗时${elapsed}ms`);
+      }
+      
+      return prediction;
+
+    } catch (error) {
+      const elapsed = Date.now() - startTime;
+      console.warn(`❌ ML预测失败（耗时${elapsed}ms），将使用基于规则的算法:`, error);
+      return null;
     }
   }
 }

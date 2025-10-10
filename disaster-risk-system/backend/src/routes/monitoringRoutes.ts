@@ -82,12 +82,8 @@ router.put('/stations/:id', monitoringController.updateStation);
  */
 router.delete('/stations/:id', monitoringController.deleteStation);
 
-/**
- * @route POST /api/monitoring/stations/batch-update-status
- * @desc 批量更新监测站状态
- * @access Public
- */
-router.post('/stations/batch-update-status', monitoringController.batchUpdateStationStatus);
+// 批量更新监测站状态已移至 monitoringStationRoutes.ts
+// PUT /api/v1/monitoring/stations/batch/status
 
 /**
  * @route GET /api/monitoring/realtime

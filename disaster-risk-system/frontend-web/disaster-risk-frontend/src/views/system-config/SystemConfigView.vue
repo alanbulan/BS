@@ -625,27 +625,22 @@ const getDbConnectionColor = (status: string) => {
 
 const loadSystemInfo = async () => {
   try {
-    const response = await fetch('/api/v1/system/info')
-    if (response.ok) {
-      const result = await response.json()
-      if (result.success && result.data) {
-        const data = result.data
-        systemInfo.version = data.version || 'v1.0.0'
-        systemInfo.dbVersion = data.dbVersion || 'PostgreSQL Unknown'
-        systemInfo.dbSize = data.dbSize || '未知'
-        systemInfo.lastBackup = data.lastBackup || '暂无备份'
-        systemInfo.uptime = data.uptime || '获取中...'
-        systemInfo.environment = data.environment || 'unknown'
-        systemInfo.nodeVersion = data.nodeVersion || 'Unknown'
-        systemInfo.systemStatus = data.systemStatus || 'unknown'
-        systemInfo.systemStatusText = data.systemStatusText || '状态未知'
-        systemInfo.dbConnectionStatus = data.dbConnectionStatus || 'unknown'
-        systemInfo.dbConnectionText = data.dbConnectionText || '连接状态未知'
-      } else {
-        throw new Error('API返回格式错误')
-      }
+    const response = await systemConfigApi.getSystemInfo()
+    if (response.success && response.data) {
+      const data = response.data as any
+      systemInfo.version = data.version || 'v1.0.0'
+      systemInfo.dbVersion = data.dbVersion || 'PostgreSQL Unknown'
+      systemInfo.dbSize = data.dbSize || '未知'
+      systemInfo.lastBackup = data.lastBackup || '暂无备份'
+      systemInfo.uptime = String(data.uptime || '获取中...')
+      systemInfo.environment = data.environment || 'unknown'
+      systemInfo.nodeVersion = data.nodeVersion || 'Unknown'
+      systemInfo.systemStatus = data.systemStatus || 'unknown'
+      systemInfo.systemStatusText = data.systemStatusText || '状态未知'
+      systemInfo.dbConnectionStatus = data.dbConnectionStatus || 'unknown'
+      systemInfo.dbConnectionText = data.dbConnectionText || '连接状态未知'
     } else {
-      throw new Error(`API请求失败: ${response.status}`)
+      throw new Error('API返回格式错误')
     }
   } catch (error) {
     console.warn('获取系统信息失败，使用默认值:', error)
@@ -688,10 +683,10 @@ onMounted(() => {
 
 
 .header-left h2 {
-  margin: 0;
+  margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #333;
+  color: #303133;
 }
 
 

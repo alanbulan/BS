@@ -519,6 +519,8 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import type { Shelter, ShelterListItem } from '../../types'
 import { sheltersApi } from '../../api/modules/shelters'
+import { enrichShelter, normalizeContactInfo, getFacilitiesList } from '@/utils/shelter'
+import { parseJsonSafe } from '@/utils/json'
 
 import {
   Plus,
@@ -532,99 +534,6 @@ import {
   Download,
   Delete
 } from '@element-plus/icons-vue'
-
-// ================= 工具函数与常量 =================
-/**
- * 安全解析 JSON 字符串，失败时返回原值或空对象
- */
-const parseJSONSafe = (value: any, fallback: any = undefined) => {
-  if (value === null || value === undefined) return fallback
-  if (typeof value === 'object') return value
-  if (typeof value === 'string') {
-    try {
-      const trimmed = value.trim()
-      if (trimmed === '') return fallback
-      return JSON.parse(trimmed)
-    } catch (e) {
-      return fallback ?? value
-    }
-  }
-  return fallback ?? value
-}
-
-/**
- * 归一化 contact_info 字段，兼容不同历史键名
- * 数据库表: shelters.contact_info JSONB
- * 可能包含的键: management_agency/agency/contact, contact_person/person, contact_phone/phone/emergency_phone
- */
-const normalizeContactInfo = (raw: any) => {
-  const ci = parseJSONSafe(raw, {}) || {}
-  const agency = ci.management_agency ?? ci.agency ?? ci.contact ?? ''
-  const person = ci.contact_person ?? ci.person ?? ''
-  const phone = ci.contact_phone ?? ci.phone ?? ci.emergency_phone ?? ''
-  return {
-    ...ci,
-    management_agency: agency,
-    agency,
-    contact_person: person,
-    person,
-    contact_phone: phone,
-    phone
-  }
-}
-
-/**
- * 设施显示标签映射（键 -> 中文标签）
- * 数据库表: shelters.facilities JSONB
- */
-const FACILITY_LABELS: Record<string, string> = {
-  food: '食品',
-  water: '饮用水',
-  heating: '供暖',
-  power: '供电',
-  medical: '医疗点',
-  parking: '停车位',
-  restrooms: '卫生间',
-  sanitation: '清洁消杀',
-  communication: '通信保障',
-  air_conditioning: '空调',
-  wifi: 'Wi-Fi',
-  blanket: '棉被',
-  shelter_tent: '帐篷'
-}
-
-/**
- * 从避难所数据中提取设施标签列表
- */
-const getFacilitiesList = (s: any): string[] => {
-  const raw = typeof s?.facilities === 'string' ? parseJSONSafe(s.facilities, {}) : (s?.facilities || {})
-  if (!raw || typeof raw !== 'object') return []
-  const labels: string[] = []
-  Object.keys(raw).forEach((key) => {
-    const val = (raw as any)[key]
-    if (val === true || val === 'true' || (typeof val === 'number' && val > 0)) {
-      labels.push(FACILITY_LABELS[key] || key)
-    }
-  })
-  return labels
-}
-
-/**
- * 富化避难所对象: 解析 JSONB 字段并派生常用字段
- */
-const enrichShelter = (s: any): any => {
-  if (!s || typeof s !== 'object') return s
-  const contactInfo = normalizeContactInfo(s.contact_info)
-  const facilities = typeof s.facilities === 'string' ? parseJSONSafe(s.facilities, {}) : (s.facilities || {})
-  return {
-    ...s,
-    contact_info: contactInfo,
-    management_agency: s.management_agency || contactInfo.management_agency || '',
-    contact_person: s.contact_person || contactInfo.contact_person || '',
-    contact_phone: s.contact_phone || contactInfo.contact_phone || '',
-    facilities
-  }
-}
 
 // 响应式数据
 const loading = ref(false)
@@ -843,12 +752,12 @@ const editShelter = (shelter: any) => {
     elevation: shelter.elevation,
     capacity: shelter.capacity,
     current_occupancy: shelter.current_occupancy,
-    facilities: typeof shelter.facilities === 'string' ? parseJSONSafe(shelter.facilities) : shelter.facilities,
+    facilities: typeof shelter.facilities === 'string' ? parseJsonSafe(shelter.facilities, {}) : shelter.facilities,
     contact_info: ci,
     // 从后端派生字段或原始 contact_info 中提取
     contact_person: shelter.contact_person || ci?.person || '',
-    contact_phone: shelter.contact_phone || ci?.phone || ci?.emergency_phone || '',
-    management_agency: shelter.management_agency || ci?.management_agency || ci?.agency || ci?.contact || '',
+    contact_phone: shelter.contact_phone || ci?.phone || '',
+    management_agency: shelter.management_agency || ci?.management_agency || ci?.agency || '',
     access_routes: shelter.access_routes,
     safety_level: shelter.safety_level,
     operating_hours: shelter.operating_hours,
@@ -928,24 +837,19 @@ const batchExport = async () => {
     
     const ids = selectedRows.value.map(row => (row as any).shelter_id || row.id)
     
-    const response = await sheltersApi.exportShelters({ ids })
+    const blob = await sheltersApi.exportShelters({ ids })
     
-    if (response.success && response.data) {
-      // 创建下载链接
-      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `避难所数据_${new Date().toISOString().split('T')[0]}.xlsx`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      
-      ElMessage.success(`成功导出 ${selectedRows.value.length} 个避难所数据`)
-    } else {
-      ElMessage.error(response.message || '导出失败')
-    }
+    // 创建下载链接
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `避难所数据_${new Date().toISOString().split('T')[0]}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success(`成功导出 ${selectedRows.value.length} 个避难所数据`)
   } catch (error) {
     console.error('导出失败:', error)
     ElMessage.error('导出失败')
@@ -1018,7 +922,7 @@ const submitForm = async () => {
 
     // 设施解析（字符串->JSON）
     const facilities = typeof (formData as any).facilities === 'string'
-      ? parseJSONSafe((formData as any).facilities, {})
+      ? parseJsonSafe((formData as any).facilities, {})
       : (formData as any).facilities
     
     // 组装提交数据并确保数值类型
@@ -1073,12 +977,14 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e4e7ed;
 }
 
 .header-left h2 {
   margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
   color: #303133;
 }
 

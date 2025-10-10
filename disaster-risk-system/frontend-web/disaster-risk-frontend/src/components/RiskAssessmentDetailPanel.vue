@@ -127,7 +127,9 @@ watch(() => props.contributing, () => {
 }, { deep: true })
 
 onBeforeUnmount(() => {
-  chart?.dispose()
+  if (chart && !chart.isDisposed()) {
+    chart.dispose()
+  }
   chart = null
 })
 </script>

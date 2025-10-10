@@ -7,6 +7,14 @@
         <p>管理和监控各类灾害风险区域</p>
       </div>
       <div class="header-right">
+        <el-button 
+          type="success" 
+          @click="handleBatchAssess"
+          :disabled="selectedZones.length === 0"
+        >
+          <el-icon><DataAnalysis /></el-icon>
+          批量评估 {{ selectedZones.length > 0 ? `(${selectedZones.length})` : '' }}
+        </el-button>
         <el-button type="primary" @click="showCreateDialog = true">
           <el-icon><Plus /></el-icon>
           新增风险区域
@@ -196,9 +204,13 @@
             {{ row.updated_at ? formatDate(row.updated_at) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
+              <el-button size="small" type="success" @click="handleAssess(row)" :loading="assessingZoneId === row.id">
+                <el-icon><DataAnalysis /></el-icon>
+                评估
+              </el-button>
               <el-button size="small" type="primary" @click="viewDetail(row)">
                 详情
               </el-button>
@@ -495,9 +507,11 @@ import {
   Search,
   Refresh,
   Download,
-  Delete
+  Delete,
+  DataAnalysis
 } from '@element-plus/icons-vue'
 import { riskZonesApi } from '../../api/modules/riskZones'
+import { riskAssessmentsApi } from '../../api/modules/riskAssessments'
 import { disasterTypesApi } from '../../api/modules/disaster-types'
 import RiskZoneMapComponent from '../../components/RiskZoneMapComponent.vue'
 
@@ -512,6 +526,8 @@ const showDetailDialog = ref(false)
 const editingZone = ref<RiskZone | null>(null)
 const currentZone = ref<RiskZone | null>(null)
 const selectedRows = ref<RiskZone[]>([])
+const selectedZones = ref<RiskZone[]>([])
+const assessingZoneId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
 
 // 数据列表
@@ -729,11 +745,6 @@ const resetQuery = () => {
   loadRiskZones()
 }
 
-// 选择变化处理
-const handleSelectionChange = (selection: RiskZone[]) => {
-  selectedRows.value = selection
-}
-
 // 查看详情
 const viewDetail = async (zone: RiskZone) => {
   try {
@@ -801,6 +812,80 @@ const deleteRiskZone = async (id: number) => {
   } catch (error) {
     console.error('删除失败:', error)
     ElMessage.error('删除失败')
+  }
+}
+
+// 选择变化处理
+const handleSelectionChange = (selection: RiskZone[]) => {
+  selectedRows.value = selection
+  selectedZones.value = selection
+  console.log(`已选择 ${selection.length} 个风险区域`)
+}
+
+// 单个区域评估
+const handleAssess = async (zone: RiskZone) => {
+  try {
+    assessingZoneId.value = zone.id
+    console.log(`[评估] 开始评估风险区域：${zone.name} (id=${zone.id})`)
+    
+    const response = await riskAssessmentsApi.assessRisk(zone.id)
+    
+    if (response.success && response.data) {
+      ElMessage.success(`${zone.name} 风险评估完成`)
+      console.log(`[评估] 结果：风险等级${response.data.current_risk_level}级，置信度${response.data.confidence_score}`)
+      
+      // 刷新列表
+      loadRiskZones()
+    } else {
+      ElMessage.error(response.message || '评估失败')
+    }
+  } catch (error: any) {
+    console.error('[评估] 失败:', error)
+    ElMessage.error(error.response?.data?.message || '评估失败')
+  } finally {
+    assessingZoneId.value = null
+  }
+}
+
+// 批量评估
+const handleBatchAssess = async () => {
+  if (selectedZones.value.length === 0) {
+    ElMessage.warning('请先选择要评估的风险区域')
+    return
+  }
+  
+  try {
+    const zoneIds = selectedZones.value.map(z => z.id)
+    const zoneNames = selectedZones.value.map(z => z.name).join('、')
+    
+    console.log(`[批量评估] 开始评估 ${zoneIds.length} 个风险区域: ${zoneNames}`)
+    
+    loading.value = true
+    
+    // 获取第一个区域的灾害类型作为默认值
+    const disaster_type_id = selectedZones.value[0].disaster_type_id
+    
+    const response = await riskAssessmentsApi.batchAssessRisk({
+      zone_ids: zoneIds,
+      disaster_type_id: disaster_type_id
+    })
+    
+    if (response.success && response.data) {
+      const { successful, failed } = response.data
+      ElMessage.success(`批量评估完成：成功${successful}个，失败${failed}个`)
+      console.log(`[批量评估] 完成：成功${successful}个，失败${failed}个`)
+      
+      // 刷新列表
+      loadRiskZones()
+      selectedZones.value = []
+    } else {
+      ElMessage.error(response.message || '批量评估失败')
+    }
+  } catch (error: any) {
+    console.error('[批量评估] 失败:', error)
+    ElMessage.error(error.response?.data?.message || '批量评估失败')
+  } finally {
+    loading.value = false
   }
 }
 

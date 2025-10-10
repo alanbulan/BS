@@ -24,7 +24,9 @@ export class BaseController {
 
   protected validateRequired(data: any, fields: string[]): string | null {
     for (const field of fields) {
-      if (!data[field]) {
+      // 使用 === undefined 和 === null 检查，而不是 !data[field]
+      // 这样可以正确处理布尔值 false 和数字 0
+      if (data[field] === undefined || data[field] === null || data[field] === '') {
         return `${field} is required`
       }
     }

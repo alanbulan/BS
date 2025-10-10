@@ -1,7 +1,10 @@
 import { BaseModel } from './BaseModel';
-import { Point, LineString } from '../types';
+import { Point, LineString, RoadNetwork as RoadNetworkType } from '../types';
 
-export interface RoadNetwork {
+// 使用统一的类型定义
+export type RoadNetwork = RoadNetworkType;
+
+export interface RoadNetworkPartial {
   id: number;
   road_id?: string;
   road_name?: string;
@@ -427,5 +430,111 @@ export class RoadNetworkModel extends BaseModel {
       byMaintenanceStatus,
       emergencyRoutes: parseInt(emergencyResult.rows[0].count)
     };
+  }
+
+  /**
+   * 查询边界框内的道路网络
+   * 用于路径规划算法
+   */
+  async findRoadsInBoundingBox(
+    minLon: number,
+    minLat: number,
+    maxLon: number,
+    maxLat: number,
+    options: { roadTypes?: string[], limit?: number } = {}
+  ): Promise<RoadNetwork[]> {
+    try {
+      let whereClause = `
+        WHERE ST_Intersects(
+          geometry,
+          ST_MakeEnvelope($1, $2, $3, $4, 4326)
+        )
+      `;
+      
+      const params: any[] = [minLon, minLat, maxLon, maxLat];
+      let paramIndex = 5;
+
+      if (options.roadTypes && options.roadTypes.length > 0) {
+        const typePlaceholders = options.roadTypes.map((_, i) => `$${paramIndex + i}`).join(',');
+        whereClause += ` AND road_type IN (${typePlaceholders})`;
+        params.push(...options.roadTypes);
+        paramIndex += options.roadTypes.length;
+      }
+
+      const limit = options.limit || 1000;
+      
+      const query = `
+        SELECT 
+          id,
+          COALESCE(road_id, 'RD_' || id) as road_id,
+          COALESCE(name, '未命名道路_' || id) as road_name,
+          ST_AsGeoJSON(geometry)::json as geometry,
+          COALESCE(road_type, '其他道路') as road_type,
+          'good' as road_condition,
+          width as width_meters,
+          max_speed as speed_limit,
+          COALESCE(is_bidirectional, true) as is_accessible,
+          COALESCE(is_emergency_route, false) as is_emergency_route,
+          traffic_capacity
+        FROM road_network
+        ${whereClause}
+        ORDER BY road_class ASC, is_emergency_route DESC
+        LIMIT $${paramIndex}
+      `;
+      
+      params.push(limit);
+      
+      const result = await this.executeQuery(query, params);
+      
+      // 确保返回的数据符合RoadNetwork类型
+      return result.rows.map((row: any) => ({
+        id: row.id,
+        road_id: row.road_id,
+        road_name: row.road_name,
+        geometry: row.geometry,
+        road_type: row.road_type,
+        road_condition: row.road_condition,
+        width_meters: row.width_meters,
+        speed_limit: row.speed_limit,
+        is_emergency_route: row.is_emergency_route,
+        is_accessible: row.is_accessible,
+        traffic_capacity: row.traffic_capacity,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+    } catch (error) {
+      console.error('查询边界框内道路失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 查询起点和终点之间区域的道路
+   */
+  async findRoadsBetweenPoints(
+    startPoint: Point,
+    endPoint: Point,
+    bufferKm: number = 2
+  ): Promise<RoadNetwork[]> {
+    try {
+      // 计算边界框（扩展bufferKm公里）
+      const [startLon, startLat] = startPoint.coordinates;
+      const [endLon, endLat] = endPoint.coordinates;
+      
+      const bufferDegrees = bufferKm / 111.32; // 1度约111.32公里
+      
+      const minLon = Math.min(startLon, endLon) - bufferDegrees;
+      const maxLon = Math.max(startLon, endLon) + bufferDegrees;
+      const minLat = Math.min(startLat, endLat) - bufferDegrees;
+      const maxLat = Math.max(startLat, endLat) + bufferDegrees;
+      
+      // 优先获取应急路线和主要道路
+      return this.findRoadsInBoundingBox(minLon, minLat, maxLon, maxLat, {
+        limit: 2000
+      });
+    } catch (error) {
+      console.error('查询两点间道路失败:', error);
+      return [];
+    }
   }
 }

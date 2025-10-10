@@ -3,17 +3,13 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
-        <h2>风险评估管理</h2>
-        <p>管理和查看各区域的风险评估结果</p>
+        <h2>风险评估记录</h2>
+        <p>查看历史风险评估结果和分析报告</p>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="showCreateDialog = true">
-          <el-icon><Plus /></el-icon>
-          新增评估
-        </el-button>
-        <el-button type="success" @click="showBatchAssessDialog = true">
-          <el-icon><DataAnalysis /></el-icon>
-          批量评估
+        <el-button type="primary" @click="goToRiskZones">
+          <el-icon><LocationFilled /></el-icon>
+          前往评估
         </el-button>
         <el-button @click="loadAssessments">
           <el-icon><Refresh /></el-icon>
@@ -21,6 +17,25 @@
         </el-button>
       </div>
     </div>
+
+    <!-- 提示信息 -->
+    <el-alert
+      v-if="assessments.length > 0 && hasOldAssessments"
+      title="发现旧评估记录"
+      type="warning"
+      :closable="false"
+      style="margin-bottom: 16px"
+    >
+      部分评估记录数据不完整（显示0.0），建议前往风险区域页面重新评估以获取最新的ML智能预测结果。
+      <el-button 
+        type="primary" 
+        size="small" 
+        @click="goToRiskZones"
+        style="margin-left: 12px"
+      >
+        立即评估
+      </el-button>
+    </el-alert>
 
     <!-- 统计概览 -->
     <div class="stats-overview">
@@ -467,7 +482,7 @@
     <el-dialog
       v-model="showDetailDialog"
       title="风险评估详情"
-      width="1000px"
+      width="1200px"
     >
       <div v-if="currentAssessment" class="assessment-detail">
         <el-descriptions :column="3" border>
@@ -507,10 +522,10 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import type { RiskAssessment, RiskZone, DisasterType } from '../../types'
 import { formatDateTime } from '../../utils'
+import { parseJsonField, objectToJsonString } from '@/utils/json'
 import { riskAssessmentsApi, riskZonesApi, disasterTypesApi } from '../../api/modules'
 import router from '../../router'
 import {
-  Plus,
   Refresh,
   Search,
   DataBoard,
@@ -519,7 +534,7 @@ import {
   Check,
   Delete,
   Download,
-  DataAnalysis
+  LocationFilled
 } from '@element-plus/icons-vue'
 import RiskAssessmentVisuals from '@/components/RiskAssessmentVisuals.vue'
 
@@ -527,9 +542,9 @@ import RiskAssessmentVisuals from '@/components/RiskAssessmentVisuals.vue'
 const loading = ref(false)
 const submitting = ref(false)
 const batchAssessing = ref(false)
-const showCreateDialog = ref(false)
+const showCreateDialog = ref(false)  // 保留，避免模板报错
 const showDetailDialog = ref(false)
-const showBatchAssessDialog = ref(false)
+const showBatchAssessDialog = ref(false)  // 保留，避免模板报错
 const editingAssessment = ref<RiskAssessment | null>(null)
 const currentAssessment = ref<RiskAssessment | null>(null)
 const selectedRows = ref<RiskAssessment[]>([])
@@ -552,6 +567,15 @@ const totalAssessments = computed(() => assessments.value?.length || 0)
 const highRiskCount = computed(() => assessments.value?.filter(a => a.current_risk_level !== undefined && a.current_risk_level >= 4).length || 0)
 const mediumRiskCount = computed(() => assessments.value?.filter(a => a.current_risk_level !== undefined && a.current_risk_level === 3).length || 0)
 const lowRiskCount = computed(() => assessments.value?.filter(a => a.current_risk_level !== undefined && a.current_risk_level <= 2).length || 0)
+
+// 检查是否有旧评估记录（8月份的数据，置信度偏低或模型版本旧）
+const hasOldAssessments = computed(() => {
+  return assessments.value.some(a => {
+    // 检查是否是旧记录（置信度<0.6 或 模型版本不是RandomForest）
+    return (a.confidence_score && a.confidence_score < 0.6) || 
+           (a.model_version && !a.model_version.includes('RandomForest'))
+  })
+})
 
 // 查询参数
 const queryParams = reactive({
@@ -746,9 +770,9 @@ const editAssessment = (row: RiskAssessment) => {
     recommendations: row.recommendations || ''
   })
   
-  contributingFactorsJson.value = row.contributing_factors ? JSON.stringify(row.contributing_factors, null, 2) : ''
-  weatherConditionsJson.value = row.weather_conditions ? JSON.stringify(row.weather_conditions, null, 2) : ''
-  historicalComparisonJson.value = row.historical_comparison ? JSON.stringify(row.historical_comparison, null, 2) : ''
+  contributingFactorsJson.value = objectToJsonString(row.contributing_factors)
+  weatherConditionsJson.value = objectToJsonString(row.weather_conditions)
+  historicalComparisonJson.value = objectToJsonString(row.historical_comparison)
   
   showCreateDialog.value = true
 }
@@ -847,6 +871,11 @@ const performBatchAssessment = async () => {
   }
 }
 
+// 跳转到风险区域页面进行评估
+const goToRiskZones = () => {
+  router.push('/risk-zones')
+}
+
 // 重置表单
 const resetForm = () => {
   Object.assign(formData, {
@@ -878,36 +907,27 @@ const submitForm = async () => {
     
     submitting.value = true
     
-    // 处理JSON字段
+    // 处理JSON字段（使用统一工具函数）
     let contributingFactors = null
     let weatherConditions = null
     let historicalComparison = null
     
-    if (contributingFactorsJson.value.trim()) {
-      try {
-        contributingFactors = JSON.parse(contributingFactorsJson.value)
-      } catch (error) {
-        ElMessage.error('影响因素格式错误，请输入有效的JSON')
-        return
+    try {
+      if (contributingFactorsJson.value.trim()) {
+        contributingFactors = parseJsonField(contributingFactorsJson.value, '影响因素')
       }
-    }
-    
-    if (weatherConditionsJson.value.trim()) {
-      try {
-        weatherConditions = JSON.parse(weatherConditionsJson.value)
-      } catch (error) {
-        ElMessage.error('天气条件格式错误，请输入有效的JSON')
-        return
+      
+      if (weatherConditionsJson.value.trim()) {
+        weatherConditions = parseJsonField(weatherConditionsJson.value, '天气条件')
       }
-    }
-    
-    if (historicalComparisonJson.value.trim()) {
-      try {
-        historicalComparison = JSON.parse(historicalComparisonJson.value)
-      } catch (error) {
-        ElMessage.error('历史对比格式错误，请输入有效的JSON')
-        return
+      
+      if (historicalComparisonJson.value.trim()) {
+        historicalComparison = parseJsonField(historicalComparisonJson.value, '历史对比')
       }
+    } catch (error) {
+      ElMessage.error((error as Error).message)
+      submitting.value = false
+      return
     }
     
     const data = {
@@ -958,13 +978,15 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e4e7ed;
 }
 
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {

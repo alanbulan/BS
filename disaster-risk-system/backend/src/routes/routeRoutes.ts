@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { RouteController } from '../controllers/RouteController';
+import { optionalAuth } from '../middleware/auth';
 
 const router = Router();
 const routeController = new RouteController();
@@ -7,9 +8,9 @@ const routeController = new RouteController();
 /**
  * @route POST /api/routes/calculate
  * @desc 计算逃生路径
- * @access Public
+ * @access Public (optionalAuth - 登录用户会保存路径)
  */
-router.post('/calculate', routeController.calculateRoute);
+router.post('/calculate', optionalAuth, routeController.calculateRoute);
 
 /**
  * @route PUT /api/routes/:routeId/status

@@ -4,6 +4,7 @@ import { DisasterTypeModel } from '../models/DisasterTypeModel';
 import { RiskAssessmentService } from './RiskAssessmentService';
 import { Warning, Point, Polygon, RiskAssessment } from '../types';
 import { configService } from './ConfigService';
+import { pool } from '../config/database';
 
 export interface WarningTriggerCondition {
   riskLevel: number;
@@ -515,8 +516,7 @@ export class WarningService {
    * 获取监测区域
    */
   private async getMonitoredZones(): Promise<any[]> {
-    // 这里应该查询有监测设备的区域
-    // 暂时返回所有区域
+    // 查询有监测设备的风险区域
     const result = await this.riskZoneModel.paginate(1, 100, { is_monitored: true });
     return result.data;
   }
@@ -723,14 +723,34 @@ export class WarningService {
    * 获取最近的避难场所
    */
   private async getNearestShelters(geometry: any): Promise<any> {
-    // 这里应该查询最近的避难场所
-    // 暂时返回示例数据
-    return {
-      shelters: [
-        { name: '市民广场避难场所', distance: 1.2, capacity: 1000 },
-        { name: '体育馆避难场所', distance: 2.5, capacity: 2000 }
-      ]
-    };
+    try {
+      // 从数据库查询最近的避难场所
+      const query = `
+        SELECT name,
+          ST_Distance(
+            location::geography,
+            ST_Centroid(ST_GeomFromGeoJSON($1))::geography
+          ) / 1000 as distance,
+          capacity
+        FROM shelters
+        WHERE is_active = true
+        ORDER BY distance
+        LIMIT 3
+      `;
+      
+      const result = await pool.query(query, [JSON.stringify(geometry)]);
+      
+      return {
+        shelters: result.rows.map((r: any) => ({
+          name: r.name,
+          distance: parseFloat(r.distance).toFixed(1),
+          capacity: r.capacity
+        }))
+      };
+    } catch (error) {
+      console.error('查询避难所失败:', error);
+      return { shelters: [] };
+    }
   }
 
   /**

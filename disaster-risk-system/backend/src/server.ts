@@ -1,9 +1,14 @@
 import app from './app';
 import dotenv from 'dotenv';
 import redisConfig from './config/redis';
+import { pool } from './config/database';
+import { MonitoringDataGeneratorService } from './services/MonitoringDataGeneratorService';
 
 // 加载环境变量
 dotenv.config();
+
+// 监测数据生成服务实例
+let dataGenerator: MonitoringDataGeneratorService | null = null;
 
 // 初始化Redis连接
 async function initializeRedis() {
@@ -15,8 +20,31 @@ async function initializeRedis() {
   }
 }
 
+// 初始化监测数据自动生成服务
+async function initializeDataGenerator() {
+  try {
+    // 仅在开发环境或设置了启用标志时启动
+    const enableDataGen = process.env.ENABLE_DATA_GENERATOR === 'true' || 
+                         process.env.NODE_ENV === 'development';
+    
+    if (enableDataGen) {
+      dataGenerator = new MonitoringDataGeneratorService(pool);
+      // 每5分钟生成一次数据
+      dataGenerator.start('*/5 * * * *');
+      console.log('✅ 监测数据自动生成服务已启动');
+    } else {
+      console.log('ℹ️  监测数据自动生成服务未启用 (设置 ENABLE_DATA_GENERATOR=true 启用)');
+    }
+  } catch (error) {
+    console.warn('⚠️ 监测数据生成服务启动失败:', error);
+  }
+}
+
 // 启动Redis连接
 initializeRedis();
+
+// 启动数据生成服务
+initializeDataGenerator();
 
 const PORT = parseInt(process.env.PORT || '3000');
 const HOST = process.env.HOST || '0.0.0.0';
@@ -67,6 +95,12 @@ process.on('SIGINT', async () => {
 
 async function gracefulShutdown() {
   try {
+    // 停止数据生成服务
+    if (dataGenerator) {
+      dataGenerator.stop();
+      console.log('监测数据生成服务已停止');
+    }
+    
     // 关闭HTTP服务器
     server.close(() => {
       console.log('HTTP服务器已关闭');
@@ -75,6 +109,10 @@ async function gracefulShutdown() {
     // 断开Redis连接
     await redisConfig.disconnect();
     console.log('Redis连接已断开');
+    
+    // 关闭数据库连接
+    await pool.end();
+    console.log('数据库连接已断开');
     
     process.exit(0);
   } catch (error) {

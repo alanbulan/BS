@@ -458,16 +458,65 @@ export class WarningController extends BaseController {
    * 获取预警信息历史记录
    */
   getWarningHistory = this.asyncHandler(async (req: Request, res: Response) => {
-    const { warning_id } = req.params;
+    const { id } = req.params;
 
-    if (!warning_id) {
+    if (!id) {
       this.error(res, '预警ID不能为空', 400);
       return;
     }
 
-    const history = await WarningModel.findAll();
+    const warningId = parseInt(id);
+    if (isNaN(warningId)) {
+      this.error(res, '预警ID格式错误', 400);
+      return;
+    }
+
+    // 这里应该调用模型方法来获取特定预警的历史记录
+    // 由于没有专门的历史记录表，我们返回预警的更新信息
+    const warning = await WarningModel.findById(warningId);
+    
+    if (!warning) {
+      this.error(res, '预警不存在', 404);
+      return;
+    }
+
+    // 构造历史记录
+    const history = [
+      {
+        id: warning.id,
+        warning_id: warning.id,
+        update_sequence: warning.update_sequence || 1,
+        action: '预警发布',
+        content: `发布${this.getWarningLevelText(warning.warning_level)}预警: ${warning.title}`,
+        timestamp: warning.issue_time || warning.created_at,
+        created_at: warning.created_at
+      }
+    ];
+    
+    if (warning.update_sequence && warning.update_sequence > 1) {
+      history.push({
+        id: warning.id,
+        warning_id: warning.id,
+        update_sequence: warning.update_sequence,
+        action: `第${warning.update_sequence}次更新`,
+        content: '预警信息已更新',
+        timestamp: warning.effective_time || warning.issue_time,
+        created_at: warning.effective_time || warning.issue_time
+      });
+    }
+    
     this.success(res, history, '获取预警信息历史记录成功');
   });
+  
+  private getWarningLevelText(level: number): string {
+    const levelMap: Record<number, string> = {
+      1: '蓝色',
+      2: '黄色',
+      3: '橙色',
+      4: '红色'
+    };
+    return levelMap[level] || '未知';
+  }
 
 
 
@@ -500,6 +549,54 @@ export class WarningController extends BaseController {
   getDisasterTypeWarningStats = this.asyncHandler(async (req: Request, res: Response) => {
     const stats = await WarningModel.getWarningStats();
     this.success(res, stats, '获取灾害类型预警统计成功');
+  });
+
+  /**
+   * 导出预警数据
+   */
+  exportWarnings = this.asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.query;
+      
+      let warnings: any[] = [];
+      
+      if (ids && Array.isArray(ids)) {
+        // 导出指定ID的预警
+        for (const id of ids) {
+          const warning = await WarningModel.findById(parseInt(id as string));
+          if (warning) warnings.push(warning);
+        }
+      } else {
+        // 导出所有预警
+        warnings = await WarningModel.findAll(1, 10000);
+      }
+      
+      // 生成CSV内容
+      const headers = ['ID', '标题', '内容', '预警等级', '状态', '发布时间', '生效时间', '过期时间', '发布机构'];
+      const rows = warnings.map(w => [
+        w.id,
+        w.title,
+        w.content,
+        w.warning_level,
+        w.status,
+        w.issue_time,
+        w.effective_time || '',
+        w.expiry_time || '',
+        w.issuing_authority || ''
+      ]);
+      
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="warnings_${Date.now()}.csv"`);
+      res.send('\uFEFF' + csvContent); // 添加BOM以支持中文
+      return;
+    } catch (error) {
+      return this.serverError(res, error);
+    }
   });
 
   /**

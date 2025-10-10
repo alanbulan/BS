@@ -82,19 +82,26 @@ export class AuthService {
    */
   async login(username: string, password: string, rememberMe: boolean = false): Promise<LoginResult> {
     try {
+      console.log('[Auth] Login attempt for username:', username);
       // 查找用户
       const user = await this.userModel.findByUsername(username);
       if (!user) {
+        console.log('[Auth] User not found');
         throw new Error('用户不存在');
       }
+      console.log('[Auth] User found:', user.id, user.username);
+      console.log('[Auth] Password hash:', user.password_hash);
 
       // 检查账户状态
       if (!user.is_active) {
+        console.log('[Auth] Account disabled');
         throw new Error('账户已被禁用');
       }
 
       // 验证密码
+      console.log('[Auth] Validating password...');
       const isPasswordValid = await this.userModel.validatePassword(user, password);
+      console.log('[Auth] Password valid:', isPasswordValid);
       if (!isPasswordValid) {
         throw new Error('密码错误');
       }

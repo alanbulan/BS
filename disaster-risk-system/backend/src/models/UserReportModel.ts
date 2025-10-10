@@ -13,6 +13,8 @@ export class UserReportModel extends BaseModel {
     const sql = `
       SELECT 
         ur.*,
+        ST_X(ur.location) as longitude,
+        ST_Y(ur.location) as latitude,
         u.username, u.full_name as user_full_name, u.role as user_role,
         u.department as user_department, u.avatar_url as user_avatar,
         vu.username as verified_by_username, vu.full_name as verified_by_full_name,
@@ -191,6 +193,8 @@ export class UserReportModel extends BaseModel {
     const dataSql = `
       SELECT 
         ur.*,
+        ST_X(ur.location) as longitude,
+        ST_Y(ur.location) as latitude,
         u.username, u.full_name as user_full_name, u.role as user_role,
         u.department as user_department, u.avatar_url as user_avatar
       FROM user_reports ur
@@ -286,6 +290,8 @@ export class UserReportModel extends BaseModel {
     
     const sql = `
       SELECT *,
+        ST_X(location) as longitude,
+        ST_Y(location) as latitude,
         ST_Distance(
           location::geography,
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
@@ -372,7 +378,10 @@ export class UserReportModel extends BaseModel {
    */
   async getRecentEmergencyReports(hours: number = 24, limit: number = 10): Promise<UserReport[]> {
     const sql = `
-      SELECT * FROM user_reports
+      SELECT *,
+        ST_X(location) as longitude,
+        ST_Y(location) as latitude
+      FROM user_reports
       WHERE is_emergency = true
         AND created_at >= NOW() - INTERVAL '${hours} hours'
       ORDER BY created_at DESC

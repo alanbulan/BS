@@ -302,10 +302,13 @@ export class RiskZoneModel extends BaseModel {
   // 根据位置查找风险区域
   async findByLocation(location: Point): Promise<RiskZone[]> {
     const sql = `
-      SELECT rz.*, dt.name as disaster_type_name
+      SELECT 
+        rz.*,
+        ST_AsGeoJSON(rz.geometry)::json as geometry,
+        dt.name as disaster_type_name
       FROM risk_zones rz
       LEFT JOIN disaster_types dt ON rz.disaster_type_id = dt.id
-      WHERE ST_Contains(rz.geometry, ST_GeomFromText('POINT($1 $2)', 4326))
+      WHERE ST_Contains(rz.geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
       ORDER BY rz.base_risk_level DESC
     `;
     
@@ -319,19 +322,29 @@ export class RiskZoneModel extends BaseModel {
 
   // 查找附近的风险区域
   async findNearbyZones(location: Point, radiusKm: number = 10): Promise<RiskZone[]> {
+    const radiusMeters = radiusKm * 1000; // 先转换为米
+    
     const sql = `
-      SELECT rz.*, dt.name as disaster_type_name,
-             ST_Distance(ST_Centroid(rz.geometry), ST_GeomFromText('POINT($1 $2)', 4326)) * 111.32 as distance_km
+      SELECT rz.*, 
+             dt.name as disaster_type_name,
+             ST_Distance(
+               ST_Centroid(rz.geometry)::geography,
+               ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+             ) / 1000 as distance_km
       FROM risk_zones rz
       LEFT JOIN disaster_types dt ON rz.disaster_type_id = dt.id
-      WHERE ST_DWithin(ST_Centroid(rz.geometry), ST_GeomFromText('POINT($1 $2)', 4326), $3 / 111.32)
+      WHERE ST_DWithin(
+        ST_Centroid(rz.geometry)::geography,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        $3
+      )
       ORDER BY distance_km, rz.base_risk_level DESC
     `;
     
     const result = await this.executeQuery(sql, [
       location.coordinates[0],
       location.coordinates[1],
-      radiusKm
+      radiusMeters  // 直接传入米数
     ]);
     
     return result.rows;

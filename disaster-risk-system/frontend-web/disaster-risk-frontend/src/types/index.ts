@@ -171,6 +171,7 @@ export interface Warning {
   parent_warning_id?: number
   emergency_measures?: string
   created_at: string
+  updated_at?: string
   disaster_type?: DisasterType
   risk_zone?: RiskZone
   zone?: RiskZone

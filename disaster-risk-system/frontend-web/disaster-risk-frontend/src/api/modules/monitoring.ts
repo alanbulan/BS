@@ -57,7 +57,7 @@ export const monitoringStationsApi = {
       if (typeof isActiveOrOptions.is_active === 'boolean') payload.is_active = isActiveOrOptions.is_active
       if (isActiveOrOptions.installation_status) payload.installation_status = isActiveOrOptions.installation_status
     }
-    return request.post('/monitoring/stations/batch-update-status', payload)
+    return request.put('/monitoring/stations/batch/status', payload)
   },
 
   // 获取站点统计信息
@@ -68,7 +68,7 @@ export const monitoringStationsApi = {
     byType: Record<string, number>
     byZone: Record<string, number>
   }>> => {
-    return request.get('/monitoring/stats')
+    return request.get('/monitoring/stations/statistics')
   },
 
   // 导出监测站数据
@@ -175,6 +175,64 @@ export const monitoringDataApi = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  }
+}
+
+// 监测站扩展API（高级功能）
+export const monitoringStationsApiExtended = {
+  // 根据站点编号获取监测站
+  getStationByStationId: (stationId: string): Promise<ApiResponse<MonitoringStation>> => {
+    return request.get(`/monitoring/stations/code/${stationId}`)
+  },
+
+  // 根据风险区域获取监测站
+  getStationsByZone: (zoneId: number): Promise<ApiResponse<MonitoringStation[]>> => {
+    return request.get(`/monitoring/stations/zone/${zoneId}`)
+  },
+
+  // 获取需要维护的监测站
+  getStationsNeedingMaintenance: (): Promise<ApiResponse<MonitoringStation[]>> => {
+    return request.get('/monitoring/stations/maintenance/needed')
+  },
+
+  // 更新监测站维护计划
+  updateMaintenanceSchedule: (id: number, schedule: any): Promise<ApiResponse<MonitoringStation>> => {
+    return request.patch(`/monitoring/stations/${id}/maintenance-schedule`, { maintenance_schedule: schedule })
+  },
+
+  // 更新监测站设备信息
+  updateStationEquipment: (id: number, equipment: any): Promise<ApiResponse<MonitoringStation>> => {
+    return request.patch(`/monitoring/stations/${id}/equipment`, { equipment_info: equipment })
+  },
+
+  // 更新监测站位置
+  updateStationLocation: (id: number, location: { longitude: number; latitude: number }): Promise<ApiResponse<MonitoringStation>> => {
+    return request.patch(`/monitoring/stations/${id}/location`, { location })
+  },
+
+  // 获取监测站类型统计
+  getStationTypeStats: (): Promise<ApiResponse<any[]>> => {
+    return request.get('/monitoring/stations/stats/types')
+  },
+
+  // 获取数据传输状态
+  getDataTransmissionStatus: (): Promise<ApiResponse<any[]>> => {
+    return request.get('/monitoring/stations/transmission-status')
+  },
+
+  // 获取监测站完整统计信息
+  getStationStatistics: (): Promise<ApiResponse<{
+    total_stations: number
+    active_stations: number
+    inactive_stations: number
+    station_types: number
+    monitoring_types: number
+    zones_covered: number
+    installed_stations: number
+    maintenance_stations: number
+    overdue_maintenance: number
+  }>> => {
+    return request.get('/monitoring/stations/statistics')
   }
 }
 

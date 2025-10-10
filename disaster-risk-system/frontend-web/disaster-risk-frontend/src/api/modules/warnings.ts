@@ -93,6 +93,50 @@ export const warningsApi = {
     return request.get('/warnings/stats')
   },
 
+  // 获取预警历史记录
+  getWarningHistory: (warningId: number): Promise<ApiResponse<Array<{
+    id: number
+    warning_id: number
+    update_sequence: number
+    action: string
+    content: string
+    updated_by?: number
+    updated_by_name?: string
+    timestamp: string
+    created_at: string
+  }>>> => {
+    return request.get(`/warnings/${warningId}/history`)
+  },
+
+  // 获取特定区域内的预警
+  getWarningsInArea: (polygon: any): Promise<ApiResponse<Warning[]>> => {
+    return request.post('/warnings/area', { polygon })
+  },
+
+  // 获取预警等级统计
+  getWarningLevelStats: (): Promise<ApiResponse<Record<number, number>>> => {
+    return request.get('/warnings/stats/level')
+  },
+
+  // 获取灾害类型预警统计
+  getDisasterTypeWarningStats: (): Promise<ApiResponse<Record<string, number>>> => {
+    return request.get('/warnings/stats/disaster-type')
+  },
+
+  // 更新预警状态
+  updateWarningStatus: (id: number, status: 'active' | 'cancelled' | 'expired'): Promise<ApiResponse<Warning>> => {
+    return request.patch(`/warnings/${id}/status`, { status })
+  },
+
+  // 创建预警更新记录
+  createWarningUpdate: (id: number, data: {
+    content: string
+    update_type: string
+    updated_fields?: Record<string, any>
+  }): Promise<ApiResponse<any>> => {
+    return request.post(`/warnings/${id}/updates`, data)
+  },
+
   // 导出预警数据
   exportWarnings: (params?: QueryParams): Promise<Blob> => {
     return request.get('/warnings/export', {

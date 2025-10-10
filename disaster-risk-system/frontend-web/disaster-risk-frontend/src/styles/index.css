@@ -1,3 +1,6 @@
+/* 导入字体规范 */
+@import './typography.css';
+
 /* 全局页面头部样式 */
 .page-header {
   display: flex;

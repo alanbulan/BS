@@ -472,6 +472,28 @@
       </div>
     </el-dialog>
 
+    <!-- 批量更新状态对话框 -->
+    <el-dialog
+      v-model="showBatchUpdateDialog"
+      title="批量更新道路状态"
+      width="400px"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="维护状态">
+          <el-select v-model="batchUpdateForm.maintenance_status" style="width: 100%">
+            <el-option label="良好" value="good" />
+            <el-option label="一般" value="fair" />
+            <el-option label="较差" value="poor" />
+            <el-option label="维护中" value="maintenance" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBatchUpdateDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmBatchUpdate">确定</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 详情对话框 -->
     <el-dialog
       v-model="showDetailDialog"
@@ -550,13 +572,15 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import type { RoadNetwork } from '../../types'
 import { formatDateTime } from '../../utils'
+import { parseJsonField, objectToJsonString } from '@/utils/json'
 import { roadNetworkApi } from '../../api/modules'
 import router from '../../router'
 import { useAuthStore } from '../../stores/auth'
+import * as XLSX from 'xlsx'
 import {
   Plus,
   Refresh,
@@ -583,6 +607,7 @@ const authStore = useAuthStore()
 const showCreateDialog = ref(false)
 const showDetailDialog = ref(false)
 const showImportDialog = ref(false)
+const showBatchUpdateDialog = ref(false)
 const editingRoad = ref<RoadNetwork | null>(null)
 const currentRoad = ref<RoadNetwork | null>(null)
 const selectedRows = ref<RoadNetwork[]>([])
@@ -592,6 +617,11 @@ const formRef = ref<FormInstance>()
 const geometryJson = ref('')
 const elevationProfileJson = ref('')
 const bridgeTunnelInfoJson = ref('')
+
+// 批量更新表单
+const batchUpdateForm = reactive({
+  maintenance_status: 'good'
+})
 
 // 数据列表
 const roads = ref<RoadNetwork[]>([])
@@ -604,10 +634,13 @@ const emergencyRoutes = computed(() => Array.isArray(roads.value) ? roads.value.
 const maintenanceRoads = computed(() => Array.isArray(roads.value) ? roads.value.filter(r => r.maintenance_status === 'maintenance').length : 0)
 
 // 上传配置
-const uploadUrl = ref('/api/road-network/batch-import')
-const uploadHeaders = ref({
-  'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+const uploadUrl = computed(() => {
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1'
+  return `${baseURL}/road-network/batch/import`
 })
+const uploadHeaders = computed(() => ({
+  'Authorization': `Bearer ${authStore.accessToken || localStorage.getItem('accessToken')}`
+}))
 
 // 查询参数
 const queryParams = reactive({
@@ -659,10 +692,10 @@ const getRoadTypeTagType = (type: string): string => {
     national: 'warning',
     provincial: 'success',
     county: 'info',
-    rural: '',
+    rural: 'info',
     urban: 'primary'
   }
-  return typeMap[type] || ''
+  return typeMap[type] || 'info'
 }
 
 // 获取道路类型文本
@@ -805,9 +838,9 @@ const editRoad = (row: RoadNetwork) => {
     is_emergency_route: row.is_emergency_route
   })
   
-  geometryJson.value = row.geometry ? JSON.stringify(row.geometry, null, 2) : ''
-  elevationProfileJson.value = row.elevation_profile ? JSON.stringify(row.elevation_profile, null, 2) : ''
-  bridgeTunnelInfoJson.value = row.bridge_tunnel_info ? JSON.stringify(row.bridge_tunnel_info, null, 2) : ''
+  geometryJson.value = objectToJsonString(row.geometry)
+  elevationProfileJson.value = objectToJsonString(row.elevation_profile)
+  bridgeTunnelInfoJson.value = objectToJsonString(row.bridge_tunnel_info)
   
   showCreateDialog.value = true
 }
@@ -841,34 +874,28 @@ const batchSetEmergencyRoute = async (isEmergency: boolean) => {
   }
 }
 
-// 批量更新状态
-const batchUpdateCondition = async () => {
+// 打开批量更新对话框
+const batchUpdateCondition = () => {
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要更新的道路')
+    return
+  }
+  showBatchUpdateDialog.value = true
+}
+
+// 确认批量更新
+const confirmBatchUpdate = async () => {
   try {
-    if (selectedRows.value.length === 0) {
-      ElMessage.warning('请先选择要更新的道路')
-      return
-    }
-    
-    const { value: condition } = await ElMessageBox.prompt('请输入新的维护状态', '批量更新状态', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValidator: (value: string) => {
-        if (!value) return '请输入状态'
-        return true
-      }
-    })
-    
     const promises = selectedRows.value.map(row => 
-      roadNetworkApi.updateRoadCondition(row.id, condition)
+      roadNetworkApi.updateRoadCondition(row.id, batchUpdateForm.maintenance_status)
     )
     await Promise.all(promises)
     ElMessage.success('批量更新成功')
+    showBatchUpdateDialog.value = false
     loadRoads()
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('批量更新失败:', error)
-      ElMessage.error('批量更新失败')
-    }
+    console.error('批量更新失败:', error)
+    ElMessage.error('批量更新失败')
   }
 }
 
@@ -936,13 +963,11 @@ const downloadTemplate = () => {
     ]
     
     // 导出为Excel
-    import('xlsx').then(XLSX => {
-      const ws = XLSX.utils.json_to_sheet(templateData)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, '道路网络模板')
-      XLSX.writeFile(wb, '道路网络导入模板.xlsx')
-      ElMessage.success('模板下载成功')
-    })
+    const ws = XLSX.utils.json_to_sheet(templateData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '道路网络模板')
+    XLSX.writeFile(wb, '道路网络导入模板.xlsx')
+    ElMessage.success('模板下载成功')
   } catch (error) {
     console.error('下载模板失败:', error)
     ElMessage.error('下载模板失败')
@@ -1014,36 +1039,27 @@ const submitForm = async () => {
     
     submitting.value = true
     
-    // 处理JSON字段
+    // 处理JSON字段（使用统一工具）
     let geometry = null
     let elevationProfile = null
     let bridgeTunnelInfo = null
     
-    if (geometryJson.value.trim()) {
-      try {
-        geometry = JSON.parse(geometryJson.value)
-      } catch (error) {
-        ElMessage.error('几何信息格式错误，请输入有效的JSON')
-        return
+    try {
+      if (geometryJson.value.trim()) {
+        geometry = parseJsonField(geometryJson.value, '几何信息')
       }
-    }
-    
-    if (elevationProfileJson.value.trim()) {
-      try {
-        elevationProfile = JSON.parse(elevationProfileJson.value)
-      } catch (error) {
-        ElMessage.error('高程剖面格式错误，请输入有效的JSON')
-        return
+      
+      if (elevationProfileJson.value.trim()) {
+        elevationProfile = parseJsonField(elevationProfileJson.value, '高程剖面')
       }
-    }
-    
-    if (bridgeTunnelInfoJson.value.trim()) {
-      try {
-        bridgeTunnelInfo = JSON.parse(bridgeTunnelInfoJson.value)
-      } catch (error) {
-        ElMessage.error('桥梁隧道信息格式错误，请输入有效的JSON')
-        return
+      
+      if (bridgeTunnelInfoJson.value.trim()) {
+        bridgeTunnelInfo = parseJsonField(bridgeTunnelInfoJson.value, '桥梁隧道信息')
       }
+    } catch (error) {
+      ElMessage.error((error as Error).message)
+      submitting.value = false
+      return
     }
     
     const data = {
@@ -1098,7 +1114,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid #e4e7ed;
 }
 

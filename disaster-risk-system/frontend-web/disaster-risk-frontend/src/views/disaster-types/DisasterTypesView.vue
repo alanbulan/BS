@@ -296,7 +296,9 @@
             type="textarea"
             :rows="4"
             placeholder="请输入JSON格式的预警阈值配置"
+            @blur="validateThresholdJson"
           />
+          <div v-if="thresholdJsonError" class="json-error">{{ thresholdJsonError }}</div>
         </el-form-item>
       </el-form>
       
@@ -360,6 +362,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import type { DisasterType } from '../../types'
 import { formatDateTime } from '../../utils'
+import { validateJson, parseJsonField, objectToJsonString } from '@/utils/json'
 import { disasterTypesApi } from '../../api/modules'
 import {
   Plus,
@@ -382,6 +385,7 @@ const currentType = ref<DisasterType | null>(null)
 const selectedRows = ref<DisasterType[]>([])
 const formRef = ref<FormInstance>()
 const warningThresholdJson = ref('')
+const thresholdJsonError = ref('')
 
 // 数据列表
 const disasterTypes = ref<DisasterType[]>([])
@@ -445,6 +449,22 @@ const getRiskLevelText = (level: number): string => {
     5: '5级 - 很高'
   }
   return textMap[level] || `${level}级`
+}
+
+// 验证JSON阈值配置
+const validateThresholdJson = () => {
+  if (!warningThresholdJson.value.trim()) {
+    thresholdJsonError.value = ''
+    return true
+  }
+  
+  if (validateJson(warningThresholdJson.value)) {
+    thresholdJsonError.value = ''
+    return true
+  } else {
+    thresholdJsonError.value = 'JSON格式错误，请检查'
+    return false
+  }
 }
 
 // 加载灾害类型列表
@@ -513,7 +533,8 @@ const editDisasterType = (row: DisasterType) => {
     icon_url: row.icon_url || '',
     is_active: row.is_active
   })
-  warningThresholdJson.value = row.warning_threshold ? JSON.stringify(row.warning_threshold, null, 2) : ''
+  warningThresholdJson.value = objectToJsonString(row.warning_threshold)
+  thresholdJsonError.value = ''
   showCreateDialog.value = true
 }
 
@@ -576,6 +597,7 @@ const resetForm = () => {
     is_active: true
   })
   warningThresholdJson.value = ''
+  thresholdJsonError.value = ''
   editingType.value = null
   formRef.value?.resetFields()
 }
@@ -590,13 +612,18 @@ const submitForm = async () => {
     
     submitting.value = true
     
-    // 处理预警阈值JSON
+    // 验证并解析预警阈值JSON
     let warningThreshold = null
     if (warningThresholdJson.value.trim()) {
+      if (!validateThresholdJson()) {
+        submitting.value = false
+        return
+      }
       try {
-        warningThreshold = JSON.parse(warningThresholdJson.value)
+        warningThreshold = parseJsonField(warningThresholdJson.value, '预警阈值配置')
       } catch (error) {
-        ElMessage.error('预警阈值配置格式错误，请输入有效的JSON')
+        ElMessage.error((error as Error).message)
+        submitting.value = false
         return
       }
     }
@@ -650,6 +677,8 @@ onMounted(() => {
 .header-left h2 {
   margin: 0 0 8px 0;
   color: #303133;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .header-left p {
@@ -790,5 +819,12 @@ onMounted(() => {
   height: 20px;
   border-radius: 4px;
   border: 1px solid #dcdfe6;
+}
+
+.json-error {
+  color: #f56c6c;
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>

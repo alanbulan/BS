@@ -7,6 +7,7 @@ import MainLayout from '../components/Layout/MainLayout.vue'
 // 导入页面组件
 import DashboardView from '../views/dashboard/DashboardView.vue'
 import LoginView from '../views/auth/LoginView.vue'
+import ProfileView from '../views/profile/ProfileView.vue'
 import RiskZonesView from '../views/risk-zones/RiskZonesView.vue'
 import DisasterTypesView from '../views/disaster-types/DisasterTypesView.vue'
 import RiskAssessmentsView from '../views/risk-assessments/RiskAssessmentsView.vue'
@@ -44,6 +45,12 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: DashboardView,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: ProfileView,
         meta: { requiresAuth: true }
       },
       {

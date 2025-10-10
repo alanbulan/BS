@@ -30,7 +30,7 @@ export const usersApi = {
 
   // 激活/禁用用户
   toggleUserStatus: (id: number, isActive: boolean): Promise<ApiResponse<User>> => {
-    return request.patch(`/users/${id}/status`, { isActive })
+    return request.patch(`/users/${id}/status`, { is_active: isActive })
   },
 
   // 获取用户统计信息

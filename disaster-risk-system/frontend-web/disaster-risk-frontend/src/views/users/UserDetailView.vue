@@ -2,9 +2,9 @@
   <div class="user-detail-view">
     <div class="page-header">
       <div class="header-content">
-        <el-button @click="goBack" type="text" class="back-btn">
+        <el-button @click="goBack" class="back-btn">
           <el-icon><ArrowLeft /></el-icon>
-          返回用户列表
+          <span>返回用户列表</span>
         </el-button>
         <h1>用户详情</h1>
       </div>
@@ -74,7 +74,7 @@
             <div class="location-info" :class="{ 'has-location': locationCoords.longitude && locationCoords.latitude, 'no-location-data': !locationCoords.longitude || !locationCoords.latitude }">
               <div class="info-item">
                 <label>坐标：</label>
-                <span class="location-text" :class="{ 'location-available': locationCoords.longitude && locationCoords.latitude, 'location-unavailable': !locationCoords.longitude || !locationCoords.latitude }">{{ formatLocation(userDetail.location) }}</span>
+                <span class="location-text" :class="{ 'location-available': locationCoords.longitude && locationCoords.latitude, 'location-unavailable': !locationCoords.longitude || !locationCoords.latitude }">{{ formatCoordinate(userDetail) }}</span>
               </div>
               <template v-if="locationCoords.longitude && locationCoords.latitude">
                 <div class="location-details">
@@ -116,6 +116,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { usersApi } from '../../api/modules/users'
 import type { User } from '../../types'
+import { formatCoordinate, extractCoordinates } from '@/utils/coordinate'
 import MapComponent from '../../components/MapComponent.vue'
 
 const route = useRoute()
@@ -132,10 +133,12 @@ const userDetail = ref<User>({
 })
 
 const locationCoords = computed(() => {
-  const location = formatLocation(userDetail.value.location ?? null)
-  if (location && location !== '未设置' && location.includes(',')) {
-    const [longitude, latitude] = location.split(', ')
-    return { longitude, latitude }
+  const coords = extractCoordinates(userDetail.value)
+  if (coords) {
+    return { 
+      longitude: coords.longitude.toString(), 
+      latitude: coords.latitude.toString() 
+    }
   }
   return { longitude: '', latitude: '' }
 })
@@ -182,68 +185,6 @@ const getRoleTagType = (role: string) => {
   return typeMap[role as keyof typeof typeMap] || 'info'
 }
 
-const formatLocation = (location: string | null | undefined) => {
-  if (!location) return '未设置'
-  
-  try {
-    // 处理十六进制PostGIS格式 (如: 0101000020E6100000...)
-    if (location.startsWith('0101000020')) {
-      try {
-        // PostGIS WKB格式: 01(字节序) 01000020(几何类型+SRID标志) E6100000(SRID=4326) + 坐标数据
-        // 跳过: 01(1字节) + 01000020(4字节) + E6100000(4字节) = 18个字符
-        const coordStart = 18
-        const coordData = location.substring(coordStart)
-        
-        if (coordData.length >= 32) { // 需要32个字符(16字节)表示两个double
-          // 将十六进制转换为字节数组
-          const bytes = []
-          for (let i = 0; i < coordData.length; i += 2) {
-            bytes.push(parseInt(coordData.substr(i, 2), 16))
-          }
-          
-          // 创建DataView读取坐标 (PostGIS使用little-endian)
-          const buffer = new Uint8Array(bytes).buffer
-          const view = new DataView(buffer)
-          
-          // 读取X坐标(经度)和Y坐标(纬度)
-          const longitude = view.getFloat64(0, true) // little-endian
-          const latitude = view.getFloat64(8, true)  // little-endian
-          
-          // 验证坐标范围是否合理
-          if (longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90) {
-            return `${longitude.toFixed(4)}, ${latitude.toFixed(4)}`
-          } else {
-            return '坐标超出范围'
-          }
-        } else {
-          return '十六进制数据长度不足: ' + coordData.length
-        }
-      } catch (hexError) {
-        return '十六进制解析失败'
-      }
-    }
-    
-    // 处理标准POINT格式 (如: POINT(longitude latitude))
-    if (location.includes('POINT(')) {
-      const match = location.match(/POINT\(([^)]+)\)/)
-      if (match) {
-        const coords = match[1].trim().split(/\s+/)
-        if (coords.length === 2) {
-          const longitude = parseFloat(coords[0])
-          const latitude = parseFloat(coords[1])
-          if (!isNaN(longitude) && !isNaN(latitude)) {
-            return `${longitude.toFixed(4)}, ${latitude.toFixed(4)}`
-          }
-        }
-      }
-    }
-    
-    return '格式错误'
-  } catch (error) {
-    return '解析失败'
-  }
-}
-
 const formatDateTime = (dateTime: string) => {
   if (!dateTime) return ''
   return new Date(dateTime).toLocaleString('zh-CN')
@@ -267,18 +208,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #409eff;
-  font-size: 14px;
-}
-
-.back-btn:hover {
-  color: #66b1ff;
 }
 
 .content-area {

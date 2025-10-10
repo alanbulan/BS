@@ -1,0 +1,59 @@
+/* 
+ * 字体大小统一规范
+ * 全局字体大小变量定义
+ */
+
+:root {
+  /* 标题字体 */
+  --font-size-h1: 24px;
+  --font-size-h2: 20px;
+  --font-size-h3: 18px;
+  --font-size-h4: 16px;
+  --font-size-h5: 15px;
+  
+  /* 正文字体 */
+  --font-size-base: 14px;
+  --font-size-medium: 13px;
+  --font-size-small: 12px;
+  --font-size-mini: 11px;
+  
+  /* 特殊用途字体 */
+  --font-size-large: 16px;
+  --font-size-xlarge: 18px;
+  --font-size-xxlarge: 20px;
+  --font-size-huge: 24px;
+  
+  /* 行高 */
+  --line-height-base: 1.5;
+  --line-height-tight: 1.2;
+  --line-height-loose: 1.8;
+}
+
+/* 全局字体设置 */
+body {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+/* 标题样式 */
+h1 { font-size: var(--font-size-h1); line-height: var(--line-height-tight); }
+h2 { font-size: var(--font-size-h2); line-height: var(--line-height-tight); }
+h3 { font-size: var(--font-size-h3); line-height: var(--line-height-tight); }
+h4 { font-size: var(--font-size-h4); line-height: var(--line-height-tight); }
+h5 { font-size: var(--font-size-h5); line-height: var(--line-height-tight); }
+
+/* 辅助类 */
+.text-large { font-size: var(--font-size-large); }
+.text-base { font-size: var(--font-size-base); }
+.text-medium { font-size: var(--font-size-medium); }
+.text-small { font-size: var(--font-size-small); }
+.text-mini { font-size: var(--font-size-mini); }
+
+
+
+
+
+
+
+
+

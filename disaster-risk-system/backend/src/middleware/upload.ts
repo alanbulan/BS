@@ -45,7 +45,19 @@ const ensureUploadDir = (dirPath: string): void => {
 const generateFileName = (originalName: string): string => {
   const timestamp = Date.now();
   const randomString = crypto.randomBytes(8).toString('hex');
-  const ext = path.extname(originalName);
+  let ext = path.extname(originalName);
+  
+  // 如果没有扩展名，尝试从文件名猜测
+  if (!ext && originalName) {
+    const nameLower = originalName.toLowerCase();
+    if (nameLower.includes('jpg') || nameLower.includes('jpeg')) ext = '.jpg';
+    else if (nameLower.includes('png')) ext = '.png';
+    else if (nameLower.includes('gif')) ext = '.gif';
+    else if (nameLower.includes('webp')) ext = '.webp';
+    else ext = '.jpg'; // 默认jpg
+  }
+  
+  console.log('[UPLOAD] 原始文件名:', originalName, '扩展名:', ext);
   return `${timestamp}_${randomString}${ext}`;
 };
 

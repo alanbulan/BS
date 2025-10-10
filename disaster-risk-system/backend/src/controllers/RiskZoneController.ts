@@ -306,4 +306,54 @@ export class RiskZoneController extends BaseController {
       return this.serverError(res, error);
     }
   });
+
+  /**
+   * 导出风险区域数据
+   */
+  exportRiskZones = this.asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.query;
+      
+      let zones: any[] = [];
+      
+      if (ids && Array.isArray(ids)) {
+        // 导出指定ID的风险区域
+        for (const id of ids) {
+          const zone = await this.riskZoneModel.findById(parseInt(id as string));
+          if (zone) zones.push(zone);
+        }
+      } else {
+        // 导出所有风险区域
+        const result = await this.riskZoneModel.paginate(1, 10000);
+        zones = result.data;
+      }
+      
+      // 生成CSV内容
+      const headers = ['ID', '名称', '编码', '灾害类型ID', '基础风险等级', '人口密度', '平均海拔', '平均坡度', '是否监测', '创建时间'];
+      const rows = zones.map(z => [
+        z.id,
+        z.name,
+        z.code,
+        z.disaster_type_id,
+        z.base_risk_level,
+        z.population_density || '',
+        z.elevation_avg || '',
+        z.slope_avg || '',
+        z.is_monitored ? '是' : '否',
+        z.created_at
+      ]);
+      
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="risk_zones_${Date.now()}.csv"`);
+      res.send('\uFEFF' + csvContent);
+      return;
+    } catch (error) {
+      return this.serverError(res, error);
+    }
+  });
 }

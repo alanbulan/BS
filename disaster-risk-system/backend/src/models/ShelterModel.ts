@@ -42,7 +42,10 @@ export class ShelterModel extends BaseModel {
   // 根据位置查找最近的避难场所
   async findNearest(location: LocationQuery, limit: number = 10): Promise<Shelter[]> {
     const sql = `
-      SELECT *,
+      SELECT 
+        id, name, address, capacity, current_occupancy, shelter_type,
+        is_active, facilities, contact_info, created_at, updated_at,
+        ST_AsGeoJSON(location)::json as location,
         ST_Distance(
           location::geography,
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
